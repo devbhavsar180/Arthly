@@ -56,5 +56,15 @@ async def add_security_headers(request: Request, call_next):
 def health_check():
     return {"status": "ok", "service": settings.APP_NAME}
 
+@app.get("/", tags=["Root"])
+def root():
+    return {
+        "status": "success",
+        "message": "Welcome to My Expense Tracker API",
+        "service": settings.APP_NAME,
+        "docs": "/docs",
+        "health": "/health"
+    }
+
 
 app.include_router(api_router, prefix="/api/v1")
