@@ -1,0 +1,124 @@
+# ==============================================================================
+# Environment & Secret Files (NEVER COMMIT CREDENTIALS)
+# ==============================================================================
+.env
+.env.*
+*.env
+!.env.example
+!*.env.example
+*.pem
+*.key
+*.cert
+*.crt
+secrets.json
+
+# Subfolder environments explicitly
+backend/.env
+backend/.env.*
+!backend/.env.example
+web/.env
+web/.env.*
+web/.env.local
+!web/.env.example
+mobile/.env
+mobile/.env.*
+!mobile/.env.example
+
+# ==============================================================================
+# Local Databases & Personal Financial Data
+# ==============================================================================
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+backend/*.db
+backend/*.sqlite3
+
+# ==============================================================================
+# Python Artifacts & Virtual Environments
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ==============================================================================
+# Node.js & Web Frontend (Next.js)
+# ==============================================================================
+node_modules/
+.next/
+out/
+.turbo/
+.vercel/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ==============================================================================
+# Mobile Application (React Native / Expo / Android Native)
+# ==============================================================================
+.expo/
+*.jks
+*.keystore
+debug.keystore
+
+# Android build outputs & local configuration
+.gradle/
+**/android/.gradle/
+**/android/build/
+**/android/app/build/
+**/android/.cxx/
+**/android/local.properties
+**/android/app/debug.keystore
+**/android/app/*.keystore
+**/android/app/*.jks
+
+# iOS build outputs
+**/ios/Pods/
+**/ios/build/
+
+# Standalone build deliverables & installers
+builds/
+*.apk
+*.aab
+
+# ==============================================================================
+# Temporary Files, Logs & Uploads
+# ==============================================================================
+*.log
+backend/uploads/
+tmp/
+temp/
+
+# ==============================================================================
+# Operating System & IDE Files
+# ==============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
