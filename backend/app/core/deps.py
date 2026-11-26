@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -63,4 +65,26 @@ def get_current_user(
             detail="Session has been invalidated. Please sign in again.",
         )
 
+    # Throttled activity heartbeat (updates once per 15 min window without extra write load)
+    now = datetime.now(timezone.utc)
+    last_active = user.last_active_at
+    if last_active and last_active.tzinfo is None:
+        last_active = last_active.replace(tzinfo=timezone.utc)
+    if not last_active or (now - last_active) > timedelta(minutes=15):
+        user.last_active_at = now
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+
     return user
+
+
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Strictly restrict route access to authenticated ADMIN users."""
+    if getattr(current_user, "role", "USER") != "ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator privileges required.",
+        )
+    return current_user

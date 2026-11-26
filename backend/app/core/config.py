@@ -31,6 +31,30 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     SMTP_FROM: str = ""
 
+    # Mobile OTP / SMS Settings
+    OTP_EXPIRE_MINUTES: int = 5
+    OTP_RESEND_COOLDOWN_SECONDS: int = 60
+    OTP_MAX_ATTEMPTS: int = 5
+    OTP_RATE_LIMIT_PER_HOUR: int = 5
+    SMS_PROVIDER: str = "console"  # console | twilio | fast2sms | msg91
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_FROM_NUMBER: str = ""
+    FAST2SMS_API_KEY: str = ""
+    MSG91_AUTH_KEY: str = ""
+    MSG91_TEMPLATE_ID: str = ""
+
+    # Vision AI / OCR Settings for Payment Screenshot Extraction
+    GEMINI_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
+    OCR_SPACE_API_KEY: str = ""
+
+    # Optional Admin Bootstrap (set via environment variables in deployment)
+    ADMIN_BOOTSTRAP_EMAIL: str = ""
+    ADMIN_BOOTSTRAP_PASSWORD: str = ""
+    ADMIN_BOOTSTRAP_MOBILE: str = ""
+    ADMIN_BOOTSTRAP_NAME: str = "Arthly Admin"
+
     @property
     def cors_origin_list(self) -> List[str]:
         origins = [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -9,71 +10,149 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { ApiError, getApiBaseUrl, setApiBaseUrl } from "@/lib/api";
+import { ApiError, getApiBaseUrl, mobileApi, setApiBaseUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { COLORS } from "@/lib/format";
 
 export default function LoginScreen() {
-  const { login } = useAuth();
-  const [email, setEmail] = useState("");
+  const { login, loginWithOtp } = useAuth();
+  const [mode, setMode] = useState<"PASSWORD" | "OTP">("PASSWORD");
+
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [mobileNumber, setMobileNumber] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
+
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [showServerConfig, setShowServerConfig] = useState(false);
+  const [info, setInfo] = useState("");
+
+  const [showServerBox, setShowServerBox] = useState(false);
   const [serverUrl, setServerUrl] = useState("");
-  const [serverSaved, setServerSaved] = useState(false);
 
   useEffect(() => {
-    getApiBaseUrl().then(setServerUrl);
+    getApiBaseUrl().then(setServerUrl).catch(() => { });
   }, []);
 
-  const handleLogin = async () => {
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  const handleSaveServerUrl = async () => {
+    const updated = await setApiBaseUrl(serverUrl);
+    setServerUrl(updated);
+    setInfo(`Connected to server: ${updated}`);
+    setShowServerBox(false);
+  };
+
+  const handlePasswordLogin = async () => {
     setError("");
-    if (!email.trim() || !password) {
-      setError("Please enter your email and password.");
+    setInfo("");
+    if (!identifier.trim() || !password) {
+      setError("Enter your registered mobile number or email and password.");
       return;
     }
-    setSubmitting(true);
+    setBusy(true);
     try {
-      await login(email.trim(), password);
+      await login(identifier.trim(), password);
     } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : "Cannot reach backend server. Tap 'Server Settings' below to set your API URL."
-      );
+      setError(err instanceof ApiError ? err.message : "Could not sign in.");
     } finally {
-      setSubmitting(false);
+      setBusy(false);
     }
   };
 
-  const handleSaveServer = async () => {
-    if (!serverUrl.trim()) return;
-    await setApiBaseUrl(serverUrl);
-    setServerSaved(true);
-    setTimeout(() => setServerSaved(false), 2000);
+  const handleSendOtp = async () => {
+    setError("");
+    setInfo("");
+    if (!mobileNumber.trim()) {
+      setError("Enter your verified mobile number.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await mobileApi.sendOtp({
+        mobile_number: mobileNumber.trim(),
+        purpose: "LOGIN",
+      });
+      setOtpSent(true);
+      setCooldown(res.cooldown_seconds || 60);
+      setDevOtp(res.dev_otp || null);
+      setInfo(`6-digit OTP sent to ${res.mobile_number}.`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to send OTP.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleOtpLogin = async () => {
+    setError("");
+    if (!otp.trim()) {
+      setError("Enter the 6-digit OTP.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await loginWithOtp(mobileNumber.trim(), { otp: otp.trim() });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Invalid or expired OTP.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={styles.brandHeader}>
             <View style={styles.logoBox}>
-              <Ionicons name="wallet" size={28} color="#FFFFFF" />
+              <Ionicons name="wallet" size={26} color="#fff" />
             </View>
-            <Text style={styles.appTitle}>My Expense Tracker</Text>
-            <Text style={styles.appSubtitle}>Simple, private personal expense & income tracking</Text>
+            <Text style={styles.brandName}>Arthly</Text>
+            <Text style={styles.brandSub}>Personal Finance & Smart Wealth Tracker</Text>
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Sign In</Text>
+            <Text style={styles.cardTitle}>Welcome back</Text>
+            <Text style={styles.cardSubtitle}>Sign in with Password or Mobile OTP</Text>
+
+            <View style={styles.tabRow}>
+              <TouchableOpacity
+                style={[styles.tabBtn, mode === "PASSWORD" && styles.tabBtnActive]}
+                onPress={() => {
+                  setMode("PASSWORD");
+                  setError("");
+                }}
+              >
+                <Text style={[styles.tabText, mode === "PASSWORD" && styles.tabTextActive]}>
+                  Password
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tabBtn, mode === "OTP" && styles.tabBtnActive]}
+                onPress={() => {
+                  setMode("OTP");
+                  setError("");
+                }}
+              >
+                <Text style={[styles.tabText, mode === "OTP" && styles.tabTextActive]}>
+                  Mobile OTP
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             {error ? (
               <View style={styles.errorBox}>
@@ -81,75 +160,146 @@ export default function LoginScreen() {
               </View>
             ) : null}
 
-            <Text style={styles.label}>Email Address</Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              placeholderTextColor={COLORS.textLight}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
+            {info ? (
+              <View style={styles.infoBox}>
+                <Text style={styles.infoText}>{info}</Text>
+              </View>
+            ) : null}
 
-            <View style={styles.rowBetween}>
-              <Text style={styles.label}>Password</Text>
-              <Link href="/(auth)/forgot-password" asChild>
-                <TouchableOpacity>
-                  <Text style={styles.linkText}>Forgot password?</Text>
+            {mode === "PASSWORD" ? (
+              <>
+                <Text style={styles.label}>Mobile Number or Email</Text>
+                <TextInput
+                  style={styles.input}
+                  value={identifier}
+                  onChangeText={setIdentifier}
+                  autoCapitalize="none"
+                  placeholder="+91 9876543210 or name@example.com"
+                  placeholderTextColor={COLORS.textLight}
+                />
+
+                <Text style={styles.label}>Password</Text>
+                <TextInput
+                  style={styles.input}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  placeholder="••••••••"
+                  placeholderTextColor={COLORS.textLight}
+                />
+
+                <Link href="/(auth)/forgot-password" style={styles.forgotLink}>
+                  Forgot Password? Reset via Mobile OTP
+                </Link>
+
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  onPress={handlePasswordLogin}
+                  disabled={busy}
+                >
+                  {busy ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Sign In</Text>
+                  )}
                 </TouchableOpacity>
-              </Link>
-            </View>
-            <TextInput
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Enter password"
-              placeholderTextColor={COLORS.textLight}
-              secureTextEntry
-            />
+              </>
+            ) : (
+              <>
+                <Text style={styles.label}>Verified Mobile Number</Text>
+                <TextInput
+                  style={styles.input}
+                  value={mobileNumber}
+                  onChangeText={setMobileNumber}
+                  keyboardType="phone-pad"
+                  placeholder="+91 9876543210"
+                  placeholderTextColor={COLORS.textLight}
+                />
 
-            <TouchableOpacity
-              style={[styles.primaryBtn, submitting && { opacity: 0.6 }]}
-              onPress={handleLogin}
-              disabled={submitting}
-            >
-              <Text style={styles.primaryBtnText}>{submitting ? "Signing in..." : "Sign In"}</Text>
-            </TouchableOpacity>
+                {otpSent && (
+                  <>
+                    <Text style={styles.label}>6-Digit OTP</Text>
+                    <TextInput
+                      style={[styles.input, styles.otpInput]}
+                      value={otp}
+                      onChangeText={setOtp}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      placeholder="• • • • • •"
+                      placeholderTextColor={COLORS.textLight}
+                    />
+                  </>
+                )}
+
+                {devOtp ? (
+                  <Text style={styles.devOtpText}>Dev OTP: {devOtp}</Text>
+                ) : null}
+
+                {!otpSent ? (
+                  <TouchableOpacity style={styles.primaryBtn} onPress={handleSendOtp} disabled={busy}>
+                    {busy ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.primaryBtnText}>Send OTP</Text>
+                    )}
+                  </TouchableOpacity>
+                ) : (
+                  <View style={{ gap: 10, marginTop: 6 }}>
+                    <TouchableOpacity
+                      style={styles.primaryBtn}
+                      onPress={handleOtpLogin}
+                      disabled={busy}
+                    >
+                      {busy ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={styles.primaryBtnText}>Verify & Sign In</Text>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      disabled={cooldown > 0 || busy}
+                      onPress={handleSendOtp}
+                      style={styles.resendBtn}
+                    >
+                      <Text style={styles.resendText}>
+                        {cooldown > 0 ? `Resend OTP in ${cooldown}s` : "Resend OTP"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </>
+            )}
 
             <View style={styles.footerRow}>
-              <Text style={styles.footerText}>New here? </Text>
-              <Link href="/(auth)/register" asChild>
-                <TouchableOpacity>
-                  <Text style={styles.linkText}>Create Account</Text>
-                </TouchableOpacity>
+              <Text style={styles.footerMuted}>New to Arthly? </Text>
+              <Link href="/(auth)/register" style={styles.footerLink}>
+                Create Account
               </Link>
             </View>
           </View>
 
           <TouchableOpacity
             style={styles.serverToggle}
-            onPress={() => setShowServerConfig((v) => !v)}
+            onPress={() => setShowServerBox((v) => !v)}
           >
-            <Ionicons name="server-outline" size={15} color={COLORS.textMuted} />
-            <Text style={styles.serverToggleText}>Backend Server Settings</Text>
+            <Ionicons name="server-outline" size={14} color={COLORS.textMuted} />
+            <Text style={styles.serverToggleText}>
+              {showServerBox ? "Hide Server URL Settings" : "Server Connection Settings"}
+            </Text>
           </TouchableOpacity>
 
-          {showServerConfig && (
+          {showServerBox && (
             <View style={styles.serverCard}>
-              <Text style={styles.label}>FastAPI Backend URL</Text>
+              <Text style={styles.label}>Backend API URL</Text>
               <TextInput
                 style={styles.input}
                 value={serverUrl}
                 onChangeText={setServerUrl}
-                placeholder="http://192.168.1.10:8000/api/v1"
-                placeholderTextColor={COLORS.textLight}
                 autoCapitalize="none"
+                placeholder="http://192.168.1.10:8000/api/v1"
               />
-              <TouchableOpacity style={styles.secondaryBtn} onPress={handleSaveServer}>
-                <Text style={styles.secondaryBtnText}>
-                  {serverSaved ? "Saved!" : "Save Server URL"}
-                </Text>
+              <TouchableOpacity style={styles.secondaryBtn} onPress={handleSaveServerUrl}>
+                <Text style={styles.secondaryBtnText}>Save Server URL</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -161,19 +311,19 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.ivory },
-  container: { flexGrow: 1, justifyContent: "center", padding: 20 },
+  scroll: { flexGrow: 1, padding: 20, justifyContent: "center" },
   brandHeader: { alignItems: "center", marginBottom: 24 },
   logoBox: {
-    width: 58,
-    height: 58,
+    width: 56,
+    height: 56,
     borderRadius: 18,
     backgroundColor: COLORS.brand,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  appTitle: { fontSize: 22, fontWeight: "800", color: COLORS.text },
-  appSubtitle: { fontSize: 13, color: COLORS.textMuted, marginTop: 4, textAlign: "center" },
+  brandName: { fontSize: 24, fontWeight: "800", color: COLORS.text },
+  brandSub: { fontSize: 13, color: COLORS.textMuted, marginTop: 2 },
   card: {
     backgroundColor: COLORS.surface,
     borderRadius: 22,
@@ -181,39 +331,76 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  cardTitle: { fontSize: 18, fontWeight: "700", color: COLORS.text, marginBottom: 14 },
-  label: { fontSize: 12, fontWeight: "600", color: COLORS.text, marginBottom: 6, marginTop: 10 },
-  rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  cardTitle: { fontSize: 20, fontWeight: "800", color: COLORS.text },
+  cardSubtitle: { fontSize: 13, color: COLORS.textMuted, marginTop: 2, marginBottom: 16 },
+  tabRow: {
+    flexDirection: "row",
+    backgroundColor: COLORS.ivory,
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 14,
+  },
+  tabBtn: { flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: "center" },
+  tabBtnActive: { backgroundColor: COLORS.surface },
+  tabText: { fontSize: 13, fontWeight: "600", color: COLORS.textMuted },
+  tabTextActive: { color: COLORS.brand, fontWeight: "700" },
+  label: { fontSize: 12, fontWeight: "700", color: COLORS.text, marginBottom: 6, marginTop: 8 },
   input: {
     backgroundColor: COLORS.ivory,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 11,
     fontSize: 14,
     color: COLORS.text,
   },
+  otpInput: { fontSize: 18, letterSpacing: 6, fontWeight: "700", textAlign: "center" },
+  forgotLink: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLORS.brand,
+    alignSelf: "flex-end",
+    marginTop: 10,
+    marginBottom: 14,
+  },
   primaryBtn: {
-    marginTop: 20,
     backgroundColor: COLORS.brand,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: "center",
+    marginTop: 6,
   },
-  primaryBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
-  footerRow: { flexDirection: "row", justifyContent: "center", marginTop: 18 },
-  footerText: { fontSize: 13, color: COLORS.textMuted },
-  linkText: { fontSize: 13, fontWeight: "700", color: COLORS.brand },
+  primaryBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  resendBtn: { alignItems: "center", paddingVertical: 8 },
+  resendText: { fontSize: 13, fontWeight: "600", color: COLORS.brand },
   errorBox: {
     backgroundColor: COLORS.roseSoft,
-    borderColor: "#FECDD3",
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
+    padding: 10,
+    borderRadius: 10,
     marginBottom: 8,
   },
-  errorText: { fontSize: 12, color: COLORS.rose, fontWeight: "600" },
+  errorText: { color: COLORS.rose, fontSize: 12, fontWeight: "600" },
+  infoBox: {
+    backgroundColor: COLORS.sageSoft,
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  infoText: { color: COLORS.sage, fontSize: 12, fontWeight: "600" },
+  devOtpText: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: COLORS.amberSoft,
+    color: COLORS.amber,
+    borderRadius: 8,
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  footerRow: { flexDirection: "row", justifyContent: "center", marginTop: 18 },
+  footerMuted: { fontSize: 13, color: COLORS.textMuted },
+  footerLink: { fontSize: 13, fontWeight: "700", color: COLORS.brand },
   serverToggle: {
     flexDirection: "row",
     alignItems: "center",
@@ -226,16 +413,16 @@ const styles = StyleSheet.create({
     marginTop: 10,
     backgroundColor: COLORS.surface,
     borderRadius: 16,
-    padding: 16,
+    padding: 14,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
   secondaryBtn: {
     marginTop: 10,
-    backgroundColor: COLORS.sage,
+    backgroundColor: COLORS.text,
     borderRadius: 12,
     paddingVertical: 11,
     alignItems: "center",
   },
-  secondaryBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+  secondaryBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
 });

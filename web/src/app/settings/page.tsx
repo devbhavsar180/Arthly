@@ -1,5 +1,7 @@
 "use client";
 
+import { MobileVerificationCard } from "@/components/settings/MobileVerificationCard";
+
 import React, { useCallback, useEffect, useState } from "react";
 import {
   User,
@@ -267,6 +269,8 @@ export default function SettingsPage() {
         )}
 
         {/* User Profile & Currency */}
+        <MobileVerificationCard />
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <form
             onSubmit={handleSaveProfile}

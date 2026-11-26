@@ -96,6 +96,8 @@ debug.keystore
 
 # Standalone build deliverables & installers
 builds/
+dist/
+mobile/dist/
 *.apk
 *.aab
 

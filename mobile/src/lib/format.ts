@@ -1,19 +1,22 @@
 import { PaymentMode } from "@/types";
 
 export const COLORS = {
-  ivory: "#FAF9F6",
+  ivory: "#F8FAFC",
   surface: "#FFFFFF",
   border: "#E2E8F0",
   text: "#0F172A",
   textMuted: "#64748B",
   textLight: "#94A3B8",
   brand: "#2563EB",
+  brandDark: "#1E3A8A",
   brandSoft: "#EFF6FF",
-  sage: "#059669",
+  indigo: "#4F46E5",
+  sage: "#10B981",
   sageSoft: "#ECFDF5",
   rose: "#E11D48",
   roseSoft: "#FFF1F2",
   amber: "#D97706",
+  amberSoft: "#FFFBEB",
 };
 
 export const PAYMENT_MODES: PaymentMode[] = [
@@ -39,31 +42,27 @@ export const MONTH_NAMES = [
   "December",
 ];
 
-export function formatCurrency(amount: number, symbol: string = "₹"): string {
-  const safe = Number.isFinite(amount) ? amount : 0;
-  const negative = safe < 0;
-  const abs = Math.abs(safe);
-  const [intPart, decPart] = abs.toFixed(2).split(".");
-  let formattedInt = intPart;
-  if (intPart.length > 3) {
-    const last3 = intPart.slice(-3);
-    let rest = intPart.slice(0, -3);
-    const groups: string[] = [];
-    while (rest.length > 2) {
-      groups.unshift(rest.slice(-2));
-      rest = rest.slice(0, -2);
-    }
-    if (rest) groups.unshift(rest);
-    formattedInt = `${groups.join(",")},${last3}`;
-  }
-  return `${negative ? "-" : ""}${symbol}${formattedInt}.${decPart}`;
+export function formatCurrency(
+  amount: number,
+  symbol: string = "₹",
+  currencyCode: string = "INR"
+): string {
+  const safeVal = Number.isFinite(amount) ? amount : 0;
+  const locale = currencyCode === "INR" ? "en-IN" : "en-US";
+  const formatted = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(safeVal));
+  return `${safeVal < 0 ? "-" : ""}${symbol}${formatted}`;
 }
 
 export function formatCompact(amount: number, symbol: string = "₹"): string {
-  const abs = Math.abs(amount);
-  if (abs >= 100000) return `${symbol}${(abs / 100000).toFixed(1)}L`;
-  if (abs >= 1000) return `${symbol}${(abs / 1000).toFixed(1)}k`;
-  return `${symbol}${abs.toFixed(0)}`;
+  const abs = Math.abs(amount || 0);
+  const sign = amount < 0 ? "-" : "";
+  if (abs >= 10000000) return `${sign}${symbol}${(abs / 10000000).toFixed(1)}Cr`;
+  if (abs >= 100000) return `${sign}${symbol}${(abs / 100000).toFixed(1)}L`;
+  if (abs >= 1000) return `${sign}${symbol}${(abs / 1000).toFixed(1)}k`;
+  return `${sign}${symbol}${abs.toFixed(0)}`;
 }
 
 export function getTodayIso(): string {
@@ -74,10 +73,14 @@ export function getTodayIso(): string {
   return `${y}-${m}-${d}`;
 }
 
-export function formatDisplayDate(iso: string): string {
-  if (!iso) return "";
-  const [y, m, d] = iso.split("-").map(Number);
-  if (!y || !m || !d) return iso;
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${String(d).padStart(2, "0")} ${months[m - 1]} ${y}`;
+export function formatDisplayDate(isoDate: string): string {
+  if (!isoDate) return "";
+  const [y, m, d] = isoDate.split("-").map(Number);
+  if (!y || !m || !d) return isoDate;
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }

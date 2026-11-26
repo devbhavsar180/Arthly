@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -94,7 +95,11 @@ export default function TransactionsScreen() {
           />
         </View>
 
-        <View style={styles.chipRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipRow}
+        >
           {(["", "EXPENSE", "INCOME"] as const).map((t) => (
             <TouchableOpacity
               key={t || "ALL"}
@@ -108,11 +113,11 @@ export default function TransactionsScreen() {
           ))}
           <TouchableOpacity
             onPress={() => setSortBy((s) => (s === "date" ? "amount" : "date"))}
-            style={[styles.chip, { marginLeft: "auto" }]}
+            style={[styles.chip, { marginLeft: 6 }]}
           >
             <Text style={styles.chipText}>Sort: {sortBy === "date" ? "Date" : "Amount"}</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
 
         <View style={styles.summaryStrip}>
           <View style={styles.stripItem}>

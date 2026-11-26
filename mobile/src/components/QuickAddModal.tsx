@@ -1,90 +1,92 @@
 import React from "react";
 import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { COLORS } from "@/lib/format";
 
 export function QuickAddModal({
   visible,
   onClose,
-  onSelectExpense,
-  onSelectIncome,
-  onSelectVoice,
-  onSelectReconciliation,
 }: {
   visible: boolean;
   onClose: () => void;
-  onSelectExpense: () => void;
-  onSelectIncome: () => void;
-  onSelectVoice: () => void;
-  onSelectReconciliation: () => void;
 }) {
+  const router = useRouter();
+
+  const goTo = (
+    path: "/screenshot-import" | "/voice-entry" | "/add-expense" | "/add-income" | "/reconciliation"
+  ) => {
+    onClose();
+    setTimeout(() => router.push(path), 120);
+  };
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={() => {}}>
+        <View style={styles.sheet}>
           <View style={styles.handle} />
-          <Text style={styles.title}>Quick Actions</Text>
-          <Text style={styles.subtitle}>Choose an action to record or verify finances</Text>
+          <Text style={styles.heading}>Quick Action</Text>
+          <Text style={styles.subheading}>Choose how you want to record or verify activity</Text>
 
-          <View style={styles.actions}>
-            {/* Voice Expense Entry */}
-            <TouchableOpacity style={[styles.option, styles.voiceOpt]} onPress={onSelectVoice}>
-              <View style={[styles.iconCircle, { backgroundColor: "#6366F1" }]}>
-                <Ionicons name="mic" size={22} color="#FFFFFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Text style={styles.optionTitle}>Voice Expense Entry</Text>
-                  <View style={styles.newBadge}>
-                    <Text style={styles.newBadgeText}>AI VOICE</Text>
-                  </View>
-                </View>
-                <Text style={styles.optionSub}>Speak naturally in Gujarati, Hindi or English</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={COLORS.textLight} />
-            </TouchableOpacity>
+          <TouchableOpacity style={styles.actionRow} onPress={() => goTo("/screenshot-import")}>
+            <View style={[styles.iconCircle, { backgroundColor: COLORS.brandSoft }]}>
+              <Ionicons name="scan-outline" size={22} color={COLORS.brand} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionTitle}>Scan Payment Screenshot</Text>
+              <Text style={styles.actionSub}>Auto-extract GPay, PhonePe & Paytm UPI receipts</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.textLight} />
+          </TouchableOpacity>
 
-            {/* Add Expense */}
-            <TouchableOpacity style={[styles.option, styles.expenseOpt]} onPress={onSelectExpense}>
-              <View style={[styles.iconCircle, { backgroundColor: COLORS.brand }]}>
-                <Ionicons name="arrow-down" size={22} color="#FFFFFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.optionTitle}>Add Expense</Text>
-                <Text style={styles.optionSub}>Food, Travel, Rent, UPI, Cash &amp; more</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={COLORS.textLight} />
-            </TouchableOpacity>
+          <TouchableOpacity style={styles.actionRow} onPress={() => goTo("/voice-entry")}>
+            <View style={[styles.iconCircle, { backgroundColor: "#EEF2FF" }]}>
+              <Ionicons name="mic-outline" size={22} color={COLORS.indigo} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionTitle}>Voice Entry (Gujarati / EN / HI)</Text>
+              <Text style={styles.actionSub}>Speak naturally to parse transactions</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.textLight} />
+          </TouchableOpacity>
 
-            {/* Add Income */}
-            <TouchableOpacity style={[styles.option, styles.incomeOpt]} onPress={onSelectIncome}>
-              <View style={[styles.iconCircle, { backgroundColor: COLORS.sage }]}>
-                <Ionicons name="arrow-up" size={22} color="#FFFFFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.optionTitle}>Add Income</Text>
-                <Text style={styles.optionSub}>Monthly Salary, Freelancing, Bonus</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={COLORS.textLight} />
-            </TouchableOpacity>
+          <TouchableOpacity style={styles.actionRow} onPress={() => goTo("/add-expense")}>
+            <View style={[styles.iconCircle, { backgroundColor: COLORS.roseSoft }]}>
+              <Ionicons name="arrow-down-circle-outline" size={22} color={COLORS.rose} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionTitle}>Add Expense</Text>
+              <Text style={styles.actionSub}>Record daily spending manually</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.textLight} />
+          </TouchableOpacity>
 
-            {/* Bank Statement Verification */}
-            <TouchableOpacity style={[styles.option, styles.reconOpt]} onPress={onSelectReconciliation}>
-              <View style={[styles.iconCircle, { backgroundColor: "#0D9488" }]}>
-                <Ionicons name="document-text" size={22} color="#FFFFFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.optionTitle}>Bank Reconciliation</Text>
-                <Text style={styles.optionSub}>Upload &amp; verify PDF, CSV or Excel statement</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={COLORS.textLight} />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.actionRow} onPress={() => goTo("/add-income")}>
+            <View style={[styles.iconCircle, { backgroundColor: COLORS.sageSoft }]}>
+              <Ionicons name="arrow-up-circle-outline" size={22} color={COLORS.sage} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionTitle}>Add Income</Text>
+              <Text style={styles.actionSub}>Log salary, bonus, refund, or inflow</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.textLight} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionRow} onPress={() => goTo("/reconciliation")}>
+            <View style={[styles.iconCircle, { backgroundColor: COLORS.amberSoft }]}>
+              <Ionicons name="checkmark-done-outline" size={22} color={COLORS.amber} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionTitle}>Bank Verification</Text>
+              <Text style={styles.actionSub}>Reconcile bank statement against entries</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.textLight} />
+          </TouchableOpacity>
 
           <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
-        </Pressable>
+        </View>
       </Pressable>
     </Modal>
   );
@@ -93,13 +95,13 @@ export function QuickAddModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.42)",
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
     justifyContent: "flex-end",
   },
   sheet: {
     backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 28,
@@ -107,88 +109,38 @@ const styles = StyleSheet.create({
   handle: {
     width: 40,
     height: 4,
+    borderRadius: 99,
     backgroundColor: COLORS.border,
-    borderRadius: 2,
     alignSelf: "center",
     marginBottom: 14,
   },
-  title: {
-    fontSize: 19,
-    fontWeight: "800",
-    color: COLORS.text,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: COLORS.textMuted,
-    marginTop: 2,
-    marginBottom: 16,
-  },
-  actions: {
-    gap: 10,
-  },
-  option: {
+  heading: { fontSize: 18, fontWeight: "800", color: COLORS.text },
+  subheading: { fontSize: 12, color: COLORS.textMuted, marginTop: 2, marginBottom: 14 },
+  actionRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  voiceOpt: {
-    backgroundColor: "#EEF2FF",
-    borderColor: "#C7D2FE",
-  },
-  expenseOpt: {
-    backgroundColor: COLORS.brandSoft,
-    borderColor: "#BFDBFE",
-  },
-  incomeOpt: {
-    backgroundColor: COLORS.sageSoft,
-    borderColor: "#A7F3D0",
-  },
-  reconOpt: {
-    backgroundColor: "#F0FDFA",
-    borderColor: "#99F6E4",
-  },
-  newBadge: {
-    backgroundColor: "#4F46E5",
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: 6,
-  },
-  newBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 0.5,
+    gap: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: COLORS.ivory,
+    marginBottom: 8,
   },
   iconCircle: {
     width: 42,
     height: 42,
-    borderRadius: 13,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
-  optionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: COLORS.text,
-  },
-  optionSub: {
-    fontSize: 11.5,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
+  actionTitle: { fontSize: 14, fontWeight: "700", color: COLORS.text },
+  actionSub: { fontSize: 11, color: COLORS.textMuted, marginTop: 2 },
   cancelBtn: {
-    marginTop: 14,
-    paddingVertical: 13,
-    borderRadius: 14,
-    backgroundColor: COLORS.ivory,
+    marginTop: 6,
+    paddingVertical: 12,
     alignItems: "center",
+    borderRadius: 14,
+    backgroundColor: "#F1F5F9",
   },
-  cancelText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: COLORS.textMuted,
-  },
+  cancelText: { fontSize: 14, fontWeight: "700", color: COLORS.textMuted },
 });

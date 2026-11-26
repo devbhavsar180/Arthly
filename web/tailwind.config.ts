@@ -9,7 +9,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ivory: "#FAF9F6",
+        ivory: "#F8FAFC",
         surface: "#FFFFFF",
         brand: {
           50: "#EFF6FF",
@@ -18,10 +18,12 @@ const config: Config = {
           500: "#3B82F6",
           600: "#2563EB",
           700: "#1D4ED8",
+          900: "#1E3A8A",
         },
         sage: {
           50: "#ECFDF5",
           100: "#D1FAE5",
+          200: "#A7F3D0",
           500: "#10B981",
           600: "#059669",
           700: "#047857",
@@ -39,8 +41,8 @@ const config: Config = {
         ],
       },
       boxShadow: {
-        card: "0 1px 3px rgba(15, 23, 42, 0.04), 0 4px 16px rgba(15, 23, 42, 0.03)",
-        soft: "0 8px 30px rgba(15, 23, 42, 0.06)",
+        card: "0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 20px rgba(15, 23, 42, 0.03)",
+        soft: "0 10px 30px -5px rgba(15, 23, 42, 0.08)",
       },
     },
   },

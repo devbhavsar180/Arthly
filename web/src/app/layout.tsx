@@ -3,9 +3,9 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 
 export const metadata: Metadata = {
-  title: "My Expense Tracker — Personal Finance & Income Manager",
+  title: "Arthly — AI Personal Finance, Budgets & Savings Manager",
   description:
-    "Simple, fast, private personal expense and monthly income tracker with interactive dashboards and financial reports.",
+    "Modern, private AI-powered personal expense, savings goals, smart budgets, screenshot OCR, and multi-device financial platform.",
 };
 
 export default function RootLayout({
@@ -15,7 +15,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="font-sans antialiased bg-ivory text-slate-900">
+      <body className="font-sans antialiased bg-[#F8FAFC] text-slate-900 selection:bg-brand-100 selection:text-brand-900">
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

@@ -19,6 +19,7 @@ from app.schemas.transaction import (
     TransactionUpdate,
 )
 from app.services.analytics import serialize_transaction
+from app.services.notification_service import check_unusual_spending, evaluate_budgets_for_user
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
@@ -149,7 +150,7 @@ def create_transaction(
         notes=payload.notes,
     )
     db.add(tx)
-    db.commit()
+    db.flush()
 
     tx = (
         db.query(Transaction)
@@ -157,6 +158,10 @@ def create_transaction(
         .filter(Transaction.id == tx.id)
         .first()
     )
+    if tx.transaction_type == "EXPENSE":
+        evaluate_budgets_for_user(db, current_user.id, tx.transaction_date.month, tx.transaction_date.year)
+        check_unusual_spending(db, tx)
+    db.commit()
     return serialize_transaction(tx)
 
 
@@ -224,7 +229,7 @@ def update_transaction(
     if payload.notes is not None:
         tx.notes = payload.notes
 
-    db.commit()
+    db.flush()
 
     tx = (
         db.query(Transaction)
@@ -232,6 +237,9 @@ def update_transaction(
         .filter(Transaction.id == tx.id)
         .first()
     )
+    if tx.transaction_type == "EXPENSE":
+        evaluate_budgets_for_user(db, current_user.id, tx.transaction_date.month, tx.transaction_date.year)
+    db.commit()
     return serialize_transaction(tx)
 
 

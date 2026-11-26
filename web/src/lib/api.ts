@@ -1,8 +1,26 @@
 import {
+  AdminAnnouncementItem,
+  AdminDashboardStats,
+  AdminUserItem,
+  AppConfigItem,
+  AppNotification,
+  BudgetHistoryItem,
+  BudgetItem,
+  BudgetPeriodSummary,
   Category,
   DashboardResponse,
+  EnhancedAnalyticsResponse,
+  NotificationListResponse,
+  NotificationPreferences,
+  OtpSendResponse,
+  OtpVerifyResponse,
+  PaymentScreenshotRecord,
   ReconciliationMatch,
   ReconciliationSession,
+  SavingsDashboardResponse,
+  SavingsGoal,
+  ScreenshotAnalyzeResponse,
+  SystemCategoryItem,
   TokenResponse,
   Transaction,
   TransactionListResponse,
@@ -165,11 +183,34 @@ export async function downloadProtectedFile(path: string, fallbackFilename: stri
 }
 
 export const api = {
-  // Auth
-  register: (body: { full_name: string; email: string; password: string }) =>
+  // Auth & Mobile OTP
+  sendOtp: (body: { mobile_number: string; purpose: "REGISTER" | "LOGIN" | "FORGOT_PASSWORD" | "VERIFY_MOBILE" }) =>
+    request<OtpSendResponse>("/auth/otp/send", { method: "POST", body: JSON.stringify(body) }, false),
+  verifyOtp: (body: { mobile_number: string; otp: string; purpose: "REGISTER" | "LOGIN" | "FORGOT_PASSWORD" | "VERIFY_MOBILE" }) =>
+    request<OtpVerifyResponse>("/auth/otp/verify", { method: "POST", body: JSON.stringify(body) }, false),
+  registerWithOtp: (body: {
+    full_name: string;
+    mobile_number: string;
+    email?: string;
+    password: string;
+    verification_token?: string;
+    otp?: string;
+  }) => request<TokenResponse>("/auth/register-otp", { method: "POST", body: JSON.stringify(body) }, false),
+  register: (body: { full_name: string; email: string; password: string; mobile_number?: string }) =>
     request<TokenResponse>("/auth/register", { method: "POST", body: JSON.stringify(body) }, false),
-  login: (body: { email: string; password: string }) =>
+  login: (body: { email?: string; mobile_number?: string; identifier?: string; password: string }) =>
     request<TokenResponse>("/auth/login", { method: "POST", body: JSON.stringify(body) }, false),
+  loginWithOtp: (body: { mobile_number: string; otp?: string; verification_token?: string }) =>
+    request<TokenResponse>("/auth/login-otp", { method: "POST", body: JSON.stringify(body) }, false),
+  resetPasswordWithOtp: (body: {
+    mobile_number: string;
+    verification_token?: string;
+    otp?: string;
+    new_password: string;
+    confirm_password: string;
+  }) => request<{ message: string }>("/auth/reset-password-otp", { method: "POST", body: JSON.stringify(body) }, false),
+  verifyMobile: (body: { mobile_number: string; otp?: string; verification_token?: string }) =>
+    request<User>("/auth/verify-mobile", { method: "POST", body: JSON.stringify(body) }),
   logout: () => request<{ message: string }>("/auth/logout", { method: "POST" }),
   me: () => request<User>("/auth/me"),
   forgotPassword: (email: string) =>
@@ -346,4 +387,154 @@ export const api = {
     request<{ message: string }>(`/reconciliation/sessions/${id}`, {
       method: "DELETE",
     }),
+
+  // Savings Dashboard & Goals
+  getSavingsDashboard: (params: { month?: number; year?: number }) =>
+    request<SavingsDashboardResponse>(`/savings/dashboard${buildQuery(params)}`),
+  listSavingsGoals: () => request<SavingsGoal[]>("/savings/goals"),
+  createSavingsGoal: (body: {
+    name: string;
+    target_amount: number;
+    current_amount?: number;
+    target_date: string;
+    icon?: string;
+    color?: string;
+    notes?: string;
+  }) => request<SavingsGoal>("/savings/goals", { method: "POST", body: JSON.stringify(body) }),
+  updateSavingsGoal: (
+    goalId: string,
+    body: {
+      name?: string;
+      target_amount?: number;
+      target_date?: string;
+      status?: "ACTIVE" | "COMPLETED" | "PAUSED";
+      color?: string;
+      notes?: string;
+    }
+  ) => request<SavingsGoal>(`/savings/goals/${goalId}`, { method: "PUT", body: JSON.stringify(body) }),
+  contributeToGoal: (
+    goalId: string,
+    body: { amount: number; contribution_date?: string; notes?: string }
+  ) =>
+    request<SavingsGoal>(`/savings/goals/${goalId}/contribute`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  deleteSavingsGoal: (goalId: string) =>
+    request<{ message: string }>(`/savings/goals/${goalId}`, { method: "DELETE" }),
+
+  // Budgets & Expense Limit Alerts
+  getBudgets: (params: { month?: number; year?: number }) =>
+    request<BudgetPeriodSummary>(`/budgets${buildQuery(params)}`),
+  upsertBudget: (body: {
+    category_id: string | null;
+    month: number;
+    year: number;
+    limit_amount: number;
+  }) => request<BudgetItem>("/budgets", { method: "POST", body: JSON.stringify(body) }),
+  deleteBudget: (budgetId: string) =>
+    request<{ message: string }>(`/budgets/${budgetId}`, { method: "DELETE" }),
+  getBudgetHistory: (months = 6) =>
+    request<BudgetHistoryItem[]>(`/budgets/history?months=${months}`),
+  copyPreviousBudgets: (month: number, year: number) =>
+    request<{ message: string; copied: number }>(
+      `/budgets/copy-previous${buildQuery({ month, year })}`,
+      { method: "POST" }
+    ),
+
+  // Notifications & Preferences
+  listNotifications: (unreadOnly = false) =>
+    request<NotificationListResponse>(`/notifications${buildQuery({ unread_only: unreadOnly })}`),
+  markNotificationRead: (id: string) =>
+    request<AppNotification>(`/notifications/${id}/read`, { method: "PUT" }),
+  markAllNotificationsRead: () =>
+    request<{ message: string; updated: number }>("/notifications/read-all", { method: "PUT" }),
+  deleteNotification: (id: string) =>
+    request<{ message: string }>(`/notifications/${id}`, { method: "DELETE" }),
+  getNotificationPreferences: () =>
+    request<NotificationPreferences>("/notifications/preferences"),
+  updateNotificationPreferences: (body: Partial<NotificationPreferences>) =>
+    request<NotificationPreferences>("/notifications/preferences", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  checkSmartReminders: () =>
+    request<{ new_reminders_count: number; notifications: AppNotification[] }>(
+      "/notifications/check-reminders",
+      { method: "POST" }
+    ),
+
+  // Payment Screenshot AI/OCR
+  analyzeScreenshot: (formData: FormData) =>
+    request<ScreenshotAnalyzeResponse>("/screenshots/analyze", {
+      method: "POST",
+      body: formData,
+    }),
+  confirmScreenshot: (
+    screenshotId: string,
+    body: {
+      title: string;
+      amount: number;
+      category_name: string;
+      transaction_date: string;
+      payment_mode: string;
+      transaction_id?: string | null;
+      notes?: string | null;
+    }
+  ) =>
+    request<Transaction>(`/screenshots/${screenshotId}/confirm`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  discardScreenshot: (screenshotId: string) =>
+    request<{ message: string }>(`/screenshots/${screenshotId}/discard`, { method: "POST" }),
+  getScreenshotHistory: () => request<PaymentScreenshotRecord[]>("/screenshots/history"),
+
+  // Enhanced Analytics
+  getEnhancedAnalytics: (params: { month?: number; year?: number }) =>
+    request<EnhancedAnalyticsResponse>(`/reports/analytics${buildQuery(params)}`),
+
+  // Admin Panel
+  getAdminDashboard: () => request<AdminDashboardStats>("/admin/dashboard"),
+  getAdminUsers: (params?: { search?: string; status_filter?: string }) =>
+    request<AdminUserItem[]>(`/admin/users${buildQuery(params || {})}`),
+  updateAdminUserStatus: (userId: string, is_active: boolean) =>
+    request<AdminUserItem>(`/admin/users/${userId}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ is_active }),
+    }),
+  updateAdminUserRole: (userId: string, role: "USER" | "ADMIN") =>
+    request<AdminUserItem>(`/admin/users/${userId}/role`, {
+      method: "PUT",
+      body: JSON.stringify({ role }),
+    }),
+  listSystemCategories: () => request<SystemCategoryItem[]>("/admin/categories"),
+  createSystemCategory: (body: { name: string; type: TransactionType; color: string; icon?: string }) =>
+    request<SystemCategoryItem>("/admin/categories", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateSystemCategory: (
+    id: string,
+    body: { name?: string; color?: string; icon?: string; is_active?: boolean }
+  ) =>
+    request<SystemCategoryItem>(`/admin/categories/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteSystemCategory: (id: string) =>
+    request<{ message: string }>(`/admin/categories/${id}`, { method: "DELETE" }),
+  listAdminAnnouncements: () => request<AdminAnnouncementItem[]>("/admin/announcements"),
+  createAdminAnnouncement: (body: { title: string; message: string; severity: string }) =>
+    request<AdminAnnouncementItem>("/admin/announcements", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listAdminConfigs: () => request<AppConfigItem[]>("/admin/configs"),
+  updateAdminConfig: (key: string, value: string) =>
+    request<AppConfigItem>(`/admin/configs/${key}`, {
+      method: "PUT",
+      body: JSON.stringify({ value }),
+    }),
+  getAdminLogs: () => request<{ admin_logs: any[]; system_logs: any[] }>("/admin/logs"),
 };

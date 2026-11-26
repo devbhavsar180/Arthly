@@ -10,8 +10,17 @@ interface AuthContextValue {
   loading: boolean;
   currencySymbol: string;
   currencyCode: string;
-  login: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
+  loginWithOtp: (mobileNumber: string, otpOrToken: { otp?: string; verification_token?: string }) => Promise<void>;
   register: (fullName: string, email: string, password: string) => Promise<void>;
+  registerWithOtp: (payload: {
+    full_name: string;
+    mobile_number: string;
+    email?: string;
+    password: string;
+    verification_token?: string;
+    otp?: string;
+  }) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -45,8 +54,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshUser();
   }, [refreshUser]);
 
-  const login = async (email: string, password: string) => {
-    const res = await api.login({ email, password });
+  const login = async (identifier: string, password: string) => {
+    const res = await api.login({ identifier, password });
+    storeTokens(res.access_token, res.refresh_token);
+    setUser(res.user);
+    router.push("/dashboard");
+  };
+
+  const loginWithOtp = async (
+    mobileNumber: string,
+    otpOrToken: { otp?: string; verification_token?: string }
+  ) => {
+    const res = await api.loginWithOtp({ mobile_number: mobileNumber, ...otpOrToken });
     storeTokens(res.access_token, res.refresh_token);
     setUser(res.user);
     router.push("/dashboard");
@@ -54,6 +73,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = async (fullName: string, email: string, password: string) => {
     const res = await api.register({ full_name: fullName, email, password });
+    storeTokens(res.access_token, res.refresh_token);
+    setUser(res.user);
+    router.push("/dashboard");
+  };
+
+  const registerWithOtp = async (payload: {
+    full_name: string;
+    mobile_number: string;
+    email?: string;
+    password: string;
+    verification_token?: string;
+    otp?: string;
+  }) => {
+    const res = await api.registerWithOtp(payload);
     storeTokens(res.access_token, res.refresh_token);
     setUser(res.user);
     router.push("/dashboard");
@@ -82,7 +115,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         currencySymbol,
         currencyCode,
         login,
+        loginWithOtp,
         register,
+        registerWithOtp,
         logout,
         refreshUser,
       }}

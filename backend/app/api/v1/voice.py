@@ -16,6 +16,7 @@ from app.schemas.voice import (
     VoiceParseRequest,
     VoiceParseResponse,
 )
+from app.services.notification_service import evaluate_budgets_for_user
 from app.services.voice_parser import VoiceParserService
 
 router = APIRouter(prefix="/voice", tags=["Voice Expense Entry"])
@@ -125,6 +126,7 @@ def confirm_voice_transactions(
             payment_mode=item.payment_mode or "Cash",
             transaction_date=item.transaction_date,
             notes=item.notes,
+            source="VOICE",
         )
         db.add(tx)
         created_transactions.append(tx)
@@ -145,6 +147,12 @@ def confirm_voice_transactions(
         status="confirmed",
     )
     db.add(voice_entry)
+    db.flush()
+
+    periods = {(t.transaction_date.month, t.transaction_date.year) for t in created_transactions if t.transaction_type == "EXPENSE"}
+    for m, y in periods:
+        evaluate_budgets_for_user(db, current_user.id, m, y)
+
     db.commit()
 
     return {

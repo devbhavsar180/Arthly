@@ -1,119 +1,202 @@
-import React, { useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { ApiError, mobileApi } from "@/lib/api";
 import { COLORS } from "@/lib/format";
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
-  const [step, setStep] = useState<"email" | "reset">("email");
-  const [email, setEmail] = useState("");
-  const [token, setToken] = useState("");
+  const [step, setStep] = useState<1 | 2>(1);
+  const [mobileNumber, setMobileNumber] = useState("");
+  const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [msg, setMsg] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
 
-  const requestReset = async () => {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  const handleSendOtp = async () => {
     setError("");
-    setMsg("");
-    setLoading(true);
+    setSuccess("");
+    if (!mobileNumber.trim()) {
+      setError("Enter your registered mobile number.");
+      return;
+    }
+    setBusy(true);
     try {
-      const res = await mobileApi.forgotPassword(email.trim());
-      setMsg(res.message);
-      if (res.reset_token) setToken(res.reset_token);
-      setStep("reset");
+      const res = await mobileApi.sendOtp({
+        mobile_number: mobileNumber.trim(),
+        purpose: "FORGOT_PASSWORD",
+      });
+      setStep(2);
+      setCooldown(res.cooldown_seconds || 60);
+      setDevOtp(res.dev_otp || null);
+      setSuccess(res.message);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Unable to request reset.");
+      setError(err instanceof ApiError ? err.message : "Could not send recovery OTP.");
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
-  const confirmReset = async () => {
+  const handleReset = async () => {
     setError("");
-    if (newPassword.length < 8) {
-      setError("New password must be at least 8 characters.");
+    setSuccess("");
+    if (!otp.trim()) {
+      setError("Enter the 6-digit OTP.");
       return;
     }
-    setLoading(true);
+    if (newPassword.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setBusy(true);
     try {
-      const res = await mobileApi.resetPassword(token.trim(), newPassword);
-      setMsg(res.message);
+      const res = await mobileApi.resetPasswordWithOtp({
+        mobile_number: mobileNumber.trim(),
+        otp: otp.trim(),
+        new_password: newPassword,
+        confirm_password: confirmPassword,
+      });
+      setSuccess(res.message || "Password reset successful.");
       setTimeout(() => router.replace("/(auth)/login"), 1200);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Reset failed.");
+      setError(err instanceof ApiError ? err.message : "Failed to reset password.");
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.card}>
-          <Text style={styles.title}>Reset Password</Text>
-          <Text style={styles.subtitle}>Recover your account securely</Text>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.card}>
+            <Text style={styles.title}>Reset Password via Mobile OTP</Text>
+            <Text style={styles.subtitle}>
+              Verify your registered mobile number to set a new Arthly password
+            </Text>
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          {msg ? <Text style={styles.infoText}>{msg}</Text> : null}
+            {error ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+            {success ? (
+              <View style={styles.infoBox}>
+                <Text style={styles.infoText}>{success}</Text>
+              </View>
+            ) : null}
 
-          {step === "email" ? (
-            <>
-              <Text style={styles.label}>Email Address</Text>
-              <TextInput
-                style={styles.input}
-                value={email}
-                onChangeText={setEmail}
-                placeholder="you@example.com"
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-              <TouchableOpacity style={styles.primaryBtn} onPress={requestReset} disabled={loading}>
-                <Text style={styles.primaryBtnText}>
-                  {loading ? "Requesting..." : "Request Reset Token"}
-                </Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <Text style={styles.label}>Reset Token</Text>
-              <TextInput
-                style={styles.input}
-                value={token}
-                onChangeText={setToken}
-                placeholder="Paste reset token"
-                autoCapitalize="none"
-              />
-              <Text style={styles.label}>New Password</Text>
-              <TextInput
-                style={styles.input}
-                value={newPassword}
-                onChangeText={setNewPassword}
-                placeholder="At least 8 characters"
-                secureTextEntry
-              />
-              <TouchableOpacity style={styles.primaryBtn} onPress={confirmReset} disabled={loading}>
-                <Text style={styles.primaryBtnText}>
-                  {loading ? "Updating..." : "Set New Password"}
-                </Text>
-              </TouchableOpacity>
-            </>
-          )}
+            {step === 1 ? (
+              <>
+                <Text style={styles.label}>Registered Mobile Number</Text>
+                <TextInput
+                  style={styles.input}
+                  value={mobileNumber}
+                  onChangeText={setMobileNumber}
+                  keyboardType="phone-pad"
+                  placeholder="+91 9876543210"
+                />
+                <TouchableOpacity style={styles.primaryBtn} onPress={handleSendOtp} disabled={busy}>
+                  {busy ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Send Reset OTP</Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.label}>6-Digit OTP</Text>
+                <TextInput
+                  style={[styles.input, styles.otpInput]}
+                  value={otp}
+                  onChangeText={setOtp}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  placeholder="• • • • • •"
+                />
+                {devOtp ? <Text style={styles.devOtpText}>Dev OTP: {devOtp}</Text> : null}
 
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backText}>Back to Sign In</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+                <Text style={styles.label}>New Password</Text>
+                <TextInput
+                  style={styles.input}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  secureTextEntry
+                  placeholder="••••••••"
+                />
+
+                <Text style={styles.label}>Confirm New Password</Text>
+                <TextInput
+                  style={styles.input}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry
+                  placeholder="••••••••"
+                />
+
+                <TouchableOpacity style={styles.primaryBtn} onPress={handleReset} disabled={busy}>
+                  {busy ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Verify OTP & Update Password</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  disabled={cooldown > 0 || busy}
+                  onPress={handleSendOtp}
+                  style={styles.backBtn}
+                >
+                  <Text style={styles.linkText}>
+                    {cooldown > 0 ? `Resend OTP in ${cooldown}s` : "Resend OTP"}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity onPress={() => router.replace("/(auth)/login")} style={styles.backBtn}>
+              <Text style={styles.backMuted}>← Back to Sign In</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.ivory },
-  container: { flexGrow: 1, justifyContent: "center", padding: 20 },
+  scroll: { flexGrow: 1, padding: 20, justifyContent: "center" },
   card: {
     backgroundColor: COLORS.surface,
     borderRadius: 22,
@@ -122,28 +205,42 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
   title: { fontSize: 20, fontWeight: "800", color: COLORS.text },
-  subtitle: { fontSize: 13, color: COLORS.textMuted, marginTop: 4, marginBottom: 14 },
-  label: { fontSize: 12, fontWeight: "600", color: COLORS.text, marginBottom: 6, marginTop: 10 },
+  subtitle: { fontSize: 13, color: COLORS.textMuted, marginTop: 4, marginBottom: 16 },
+  label: { fontSize: 12, fontWeight: "700", color: COLORS.text, marginBottom: 6, marginTop: 10 },
   input: {
     backgroundColor: COLORS.ivory,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 11,
     fontSize: 14,
     color: COLORS.text,
   },
+  otpInput: { fontSize: 18, letterSpacing: 6, fontWeight: "700", textAlign: "center" },
   primaryBtn: {
-    marginTop: 18,
     backgroundColor: COLORS.brand,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: "center",
+    marginTop: 16,
   },
-  primaryBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
-  backBtn: { marginTop: 16, alignItems: "center" },
-  backText: { color: COLORS.textMuted, fontWeight: "600", fontSize: 13 },
-  errorText: { color: COLORS.rose, fontSize: 12, fontWeight: "600", marginBottom: 8 },
-  infoText: { color: COLORS.sage, fontSize: 12, fontWeight: "600", marginBottom: 8 },
+  primaryBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  errorBox: { backgroundColor: COLORS.roseSoft, padding: 10, borderRadius: 10, marginBottom: 8 },
+  errorText: { color: COLORS.rose, fontSize: 12, fontWeight: "600" },
+  infoBox: { backgroundColor: COLORS.sageSoft, padding: 10, borderRadius: 10, marginBottom: 8 },
+  infoText: { color: COLORS.sage, fontSize: 12, fontWeight: "600" },
+  devOtpText: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: COLORS.amberSoft,
+    color: COLORS.amber,
+    borderRadius: 8,
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  backBtn: { alignItems: "center", marginTop: 14 },
+  linkText: { fontSize: 13, fontWeight: "700", color: COLORS.brand },
+  backMuted: { fontSize: 13, fontWeight: "600", color: COLORS.textMuted },
 });

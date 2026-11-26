@@ -566,3 +566,336 @@ def test_bank_statement_csv_reconciliation(client: TestClient):
     # 4. Test delete reconciliation session
     del_s = client.delete(f"/api/v1/reconciliation/sessions/{s_id}", headers=headers)
     assert del_s.status_code == 200
+
+
+def test_mobile_otp_registration_login_and_forgot_password(client: TestClient):
+    mobile = "+919876543210"
+
+    # 1. Request registration OTP
+    otp_res = client.post(
+        "/api/v1/auth/otp/send",
+        json={"mobile_number": mobile, "purpose": "REGISTER"},
+    )
+    assert otp_res.status_code == 200, otp_res.text
+    dev_otp = otp_res.json()["dev_otp"]
+    assert dev_otp and len(dev_otp) == 6
+
+    # Cooldown check on immediate resend
+    cd_res = client.post(
+        "/api/v1/auth/otp/send",
+        json={"mobile_number": mobile, "purpose": "REGISTER"},
+    )
+    assert cd_res.status_code == 429
+
+    # Wrong OTP decrements attempts
+    bad_ver = client.post(
+        "/api/v1/auth/otp/verify",
+        json={"mobile_number": mobile, "otp": "000000", "purpose": "REGISTER"},
+    )
+    assert bad_ver.status_code == 400
+    assert "attempt" in bad_ver.json()["detail"].lower()
+
+    # Correct OTP verify
+    ver_res = client.post(
+        "/api/v1/auth/otp/verify",
+        json={"mobile_number": mobile, "otp": dev_otp, "purpose": "REGISTER"},
+    )
+    assert ver_res.status_code == 200
+    ver_token = ver_res.json()["verification_token"]
+    assert ver_token
+
+    # Complete registration
+    reg_res = client.post(
+        "/api/v1/auth/register-otp",
+        json={
+            "full_name": "Arthly Tester",
+            "mobile_number": "9876543210",
+            "password": "MobilePass123!",
+            "verification_token": ver_token,
+        },
+    )
+    assert reg_res.status_code == 201, reg_res.text
+    reg_data = reg_res.json()
+    assert reg_data["user"]["mobile_verified"] is True
+    assert reg_data["user"]["mobile_number"] == mobile
+
+    # Duplicate mobile registration blocked
+    dup_otp = client.post(
+        "/api/v1/auth/otp/send",
+        json={"mobile_number": mobile, "purpose": "REGISTER"},
+    )
+    assert dup_otp.status_code == 409
+
+    # Login with mobile number + password
+    mob_login = client.post(
+        "/api/v1/auth/login",
+        json={"identifier": "9876543210", "password": "MobilePass123!"},
+    )
+    assert mob_login.status_code == 200
+
+    # Forgot password via mobile OTP (non-enumerating for unknown numbers)
+    unknown_fp = client.post(
+        "/api/v1/auth/otp/send",
+        json={"mobile_number": "+919999999999", "purpose": "FORGOT_PASSWORD"},
+    )
+    assert unknown_fp.status_code == 200
+    assert unknown_fp.json()["dev_otp"] is None
+
+    known_fp = client.post(
+        "/api/v1/auth/otp/send",
+        json={"mobile_number": mobile, "purpose": "FORGOT_PASSWORD"},
+    )
+    assert known_fp.status_code == 200
+    fp_otp = known_fp.json()["dev_otp"]
+    assert fp_otp
+
+    reset_res = client.post(
+        "/api/v1/auth/reset-password-otp",
+        json={
+            "mobile_number": mobile,
+            "otp": fp_otp,
+            "new_password": "ResetPassword999!",
+            "confirm_password": "ResetPassword999!",
+        },
+    )
+    assert reset_res.status_code == 200
+
+    # Verify new password works
+    new_login = client.post(
+        "/api/v1/auth/login",
+        json={"mobile_number": mobile, "password": "ResetPassword999!"},
+    )
+    assert new_login.status_code == 200
+
+
+def test_savings_goals_budgets_and_deduplicated_alerts(client: TestClient):
+    _, headers = _register_user(client, email="saver@example.com", name="Saver")
+    cats = client.get("/api/v1/categories", headers=headers).json()
+    food_id = next(c["id"] for c in cats if c["name"] == "Food")
+    salary_id = next(c["id"] for c in cats if c["name"] == "Monthly Salary")
+
+    today = date.today()
+    # Add income ₹50,000
+    client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            "transaction_type": "INCOME",
+            "title": "Salary",
+            "amount": 50000.0,
+            "category_id": salary_id,
+            "transaction_date": today.isoformat(),
+        },
+    )
+
+    # Set Food Budget ₹5,000
+    b_res = client.post(
+        "/api/v1/budgets",
+        headers=headers,
+        json={"category_id": food_id, "month": today.month, "year": today.year, "limit_amount": 5000.0},
+    )
+    assert b_res.status_code == 201, b_res.text
+
+    # Spend ₹4,000 -> triggers 80% budget alert
+    client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            "transaction_type": "EXPENSE",
+            "title": "Groceries Dinner",
+            "amount": 4000.0,
+            "category_id": food_id,
+            "payment_mode": "UPI",
+            "transaction_date": today.isoformat(),
+        },
+    )
+    notifs_80 = client.get("/api/v1/notifications", headers=headers).json()
+    assert any("80%" in n["title"] for n in notifs_80["items"])
+
+    # Spend ₹100 more (total ₹4,100 = 82%) -> 80% alert must NOT repeat!
+    client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            "transaction_type": "EXPENSE",
+            "title": "Snack",
+            "amount": 100.0,
+            "category_id": food_id,
+            "payment_mode": "Cash",
+            "transaction_date": today.isoformat(),
+        },
+    )
+    notifs_after = client.get("/api/v1/notifications", headers=headers).json()
+    alerts_80 = [n for n in notifs_after["items"] if "80%" in n["title"]]
+    assert len(alerts_80) == 1
+
+    # Spend ₹1,400 more (total ₹5,500 > ₹5,000) -> Budget Exceeded alert!
+    client.post(
+        "/api/v1/transactions",
+        headers=headers,
+        json={
+            "transaction_type": "EXPENSE",
+            "title": "Party Feast",
+            "amount": 1400.0,
+            "category_id": food_id,
+            "payment_mode": "UPI",
+            "transaction_date": today.isoformat(),
+        },
+    )
+    budgets_view = client.get(f"/api/v1/budgets?month={today.month}&year={today.year}", headers=headers).json()
+    assert budgets_view["category_budgets"][0]["alert_status"] == "EXCEEDED"
+    assert budgets_view["category_budgets"][0]["spent_amount"] == 5500.0
+
+    # Create Savings Goal: New Laptop ₹80,000 with initial ₹20,000 (25%)
+    goal_res = client.post(
+        "/api/v1/savings/goals",
+        headers=headers,
+        json={
+            "name": "New Laptop",
+            "target_amount": 80000.0,
+            "current_amount": 20000.0,
+            "target_date": "2027-06-30",
+        },
+    )
+    assert goal_res.status_code == 201, goal_res.text
+    g = goal_res.json()
+    assert g["completion_percentage"] == 25.0
+    assert g["remaining_amount"] == 60000.0
+
+    # Contribute ₹60,000 -> reaches 100% COMPLETED
+    contrib_res = client.post(
+        f"/api/v1/savings/goals/{g['id']}/contribute",
+        headers=headers,
+        json={"amount": 60000.0, "notes": "Bonus allocation"},
+    )
+    assert contrib_res.status_code == 200
+    assert contrib_res.json()["status"] == "COMPLETED"
+    assert contrib_res.json()["completion_percentage"] == 100.0
+
+    # Verify Savings Dashboard & Analytics endpoints
+    sav_dash = client.get(f"/api/v1/savings/dashboard?month={today.month}&year={today.year}", headers=headers).json()
+    assert sav_dash["monthly"]["savings"] == 44500.0  # 50000 - 5500
+    analytics = client.get(f"/api/v1/reports/analytics?month={today.month}&year={today.year}", headers=headers).json()
+    assert analytics["yearly_savings"] == 44500.0
+    assert len(analytics["budget_vs_actual"]) == 1
+
+
+def test_screenshot_ocr_duplicate_detection_and_confirm(client: TestClient):
+    from PIL import Image, PngImagePlugin
+
+    _, headers = _register_user(client, email="shot@example.com", name="Shot User")
+
+    # Create a tiny valid PNG with embedded text metadata / client OCR text
+    buf = io.BytesIO()
+    img = Image.new("RGB", (120, 80), color=(255, 255, 255))
+    meta = PngImagePlugin.PngInfo()
+    meta.add_text("receipt", "Google Pay Paid to Swiggy ₹320.00 25 Nov 2026 UPI transaction ID 632910448811")
+    img.save(buf, format="PNG", pnginfo=meta)
+    png_bytes = buf.getvalue()
+
+    res = client.post(
+        "/api/v1/screenshots/analyze",
+        headers=headers,
+        files={"file": ("gpay_swiggy.png", png_bytes, "image/png")},
+        data={"ocr_text": "Google Pay\nPaid to Swiggy\n₹320.00\nUPI transaction ID: 632910448811\n25 Nov 2026"},
+    )
+    assert res.status_code == 201, res.text
+    body = res.json()
+    shot = body["screenshot"]
+    assert shot["payment_app"] == "Google Pay"
+    assert shot["extracted_amount"] == 320.0
+    assert shot["upi_transaction_id"] == "632910448811"
+    assert shot["extracted_category"] == "Food"
+    assert shot["status"] == "PENDING_REVIEW"
+    assert shot["is_duplicate"] is False
+
+    # Never auto-saved before confirm
+    txs_before = client.get("/api/v1/transactions", headers=headers).json()
+    assert txs_before["total_count"] == 0
+
+    # Confirm screenshot
+    conf = client.post(
+        f"/api/v1/screenshots/{shot['id']}/confirm",
+        headers=headers,
+        json={
+            "title": "Swiggy Lunch Order",
+            "amount": 320.0,
+            "category_name": "Food",
+            "transaction_date": "2026-11-25",
+            "payment_mode": "UPI",
+            "transaction_id": "632910448811",
+        },
+    )
+    assert conf.status_code == 201, conf.text
+    assert conf.json()["title"] == "Swiggy Lunch Order"
+
+    # Re-sharing same screenshot detects duplicate!
+    dup_res = client.post(
+        "/api/v1/screenshots/analyze",
+        headers=headers,
+        files={"file": ("gpay_swiggy.png", png_bytes, "image/png")},
+    )
+    assert dup_res.status_code == 201
+    assert dup_res.json()["screenshot"]["is_duplicate"] is True
+
+
+def test_admin_panel_rbac_and_financial_privacy(client: TestClient):
+    _, user_headers = _register_user(client, email="normal@example.com", name="Normal User")
+    admin_reg, admin_headers = _register_user(client, email="admin@example.com", name="Admin User")
+
+    # Standard user cannot access admin endpoints
+    forbid = client.get("/api/v1/admin/dashboard", headers=user_headers)
+    assert forbid.status_code == 403
+
+    # Promote admin directly in test DB
+    db = TestingSessionLocal()
+    try:
+        from app.models.user import User as DbUser
+        u = db.query(DbUser).filter(DbUser.id == admin_reg["user"]["id"]).first()
+        u.role = "ADMIN"
+        db.commit()
+    finally:
+        db.close()
+
+    # Normal user creates a private transaction with secret note
+    cats = client.get("/api/v1/categories", headers=user_headers).json()
+    food_id = next(c["id"] for c in cats if c["name"] == "Food")
+    client.post(
+        "/api/v1/transactions",
+        headers=user_headers,
+        json={
+            "transaction_type": "EXPENSE",
+            "title": "Private Confidential Purchase",
+            "amount": 9876.54,
+            "category_id": food_id,
+            "payment_mode": "UPI",
+            "transaction_date": date.today().isoformat(),
+            "notes": "SECRET_PRIVATE_NOTE",
+        },
+    )
+
+    # Admin dashboard shows aggregate counts ONLY — never private amounts or titles
+    dash = client.get("/api/v1/admin/dashboard", headers=admin_headers)
+    assert dash.status_code == 200, dash.text
+    dash_text = dash.text
+    assert "Private Confidential Purchase" not in dash_text
+    assert "SECRET_PRIVATE_NOTE" not in dash_text
+    assert "9876.54" not in dash_text
+    assert dash.json()["total_users"] == 2
+    assert dash.json()["total_transactions_count"] == 1
+
+    # Admin user list exposes no passwords, OTPs, or financial amounts
+    users_res = client.get("/api/v1/admin/users?search=Normal", headers=admin_headers)
+    assert users_res.status_code == 200
+    assert len(users_res.json()) == 1
+    assert "password_hash" not in users_res.text
+
+    # Admin announcement broadcast creates notifications for users
+    ann_res = client.post(
+        "/api/v1/admin/announcements",
+        headers=admin_headers,
+        json={"title": "System Update", "message": "Arthly v2.0 is live!", "severity": "info"},
+    )
+    assert ann_res.status_code == 201
+    user_notifs = client.get("/api/v1/notifications", headers=user_headers).json()
+    assert any(n["title"] == "System Update" for n in user_notifs["items"])

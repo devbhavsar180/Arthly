@@ -7,8 +7,20 @@ interface AuthContextValue {
   loading: boolean;
   currencySymbol: string;
   currencyCode: string;
-  login: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
+  loginWithOtp: (
+    mobileNumber: string,
+    otpOrToken: { otp?: string; verification_token?: string }
+  ) => Promise<void>;
   register: (fullName: string, email: string, password: string) => Promise<void>;
+  registerWithOtp: (payload: {
+    full_name: string;
+    mobile_number: string;
+    email?: string;
+    password: string;
+    verification_token?: string;
+    otp?: string;
+  }) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -20,12 +32,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refreshUser = useCallback(async () => {
+    const token = await getAccessToken();
+    if (!token) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
     try {
-      const token = await getAccessToken();
-      if (!token) {
-        setUser(null);
-        return;
-      }
       const me = await mobileApi.me();
       setUser(me);
     } catch {
@@ -40,8 +53,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshUser();
   }, [refreshUser]);
 
-  const login = async (email: string, password: string) => {
-    const res = await mobileApi.login({ email, password });
+  const login = async (identifier: string, password: string) => {
+    const res = await mobileApi.login({ identifier, password });
+    await storeTokens(res.access_token, res.refresh_token);
+    setUser(res.user);
+  };
+
+  const loginWithOtp = async (
+    mobileNumber: string,
+    otpOrToken: { otp?: string; verification_token?: string }
+  ) => {
+    const res = await mobileApi.loginWithOtp({ mobile_number: mobileNumber, ...otpOrToken });
     await storeTokens(res.access_token, res.refresh_token);
     setUser(res.user);
   };
@@ -52,11 +74,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(res.user);
   };
 
+  const registerWithOtp = async (payload: {
+    full_name: string;
+    mobile_number: string;
+    email?: string;
+    password: string;
+    verification_token?: string;
+    otp?: string;
+  }) => {
+    const res = await mobileApi.registerWithOtp(payload);
+    await storeTokens(res.access_token, res.refresh_token);
+    setUser(res.user);
+  };
+
   const logout = async () => {
     try {
       await mobileApi.logout();
     } catch {
-      // ignore network error on logout
+      // ignore offline
     } finally {
       await clearTokens();
       setUser(null);
@@ -71,7 +106,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         currencySymbol: user?.settings?.currency_symbol || "₹",
         currencyCode: user?.settings?.currency_code || "INR",
         login,
+        loginWithOtp,
         register,
+        registerWithOtp,
         logout,
         refreshUser,
       }}

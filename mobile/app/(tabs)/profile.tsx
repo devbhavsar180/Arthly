@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -8,52 +8,65 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect, useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { ApiError, getApiBaseUrl, mobileApi, setApiBaseUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { COLORS } from "@/lib/format";
-import { Category, TransactionType } from "@/types";
+import { Category } from "@/types";
 
 const CURRENCIES = [
-  { code: "INR", symbol: "₹" },
-  { code: "USD", symbol: "$" },
-  { code: "EUR", symbol: "€" },
-  { code: "GBP", symbol: "£" },
+  { code: "INR", symbol: "₹", label: "Indian Rupee (₹)" },
+  { code: "USD", symbol: "$", label: "US Dollar ($)" },
+  { code: "EUR", symbol: "€", label: "Euro (€)" },
+  { code: "GBP", symbol: "£", label: "British Pound (£)" },
 ];
 
-export default function ProfileSettingsScreen() {
-  const { user, refreshUser, logout, currencyCode } = useAuth();
+const VOICE_LANGUAGES: { code: "gu" | "en" | "hi" | "auto"; label: string }[] = [
+  { code: "gu", label: "Gujarati" },
+  { code: "en", label: "English" },
+  { code: "hi", label: "Hindi" },
+  { code: "auto", label: "Auto" },
+];
+
+export default function ProfileScreen() {
+  const { user, logout, refreshUser } = useAuth();
+  const router = useRouter();
+
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [email, setEmail] = useState(user?.email || "");
+  const [voiceLang, setVoiceLang] = useState<"gu" | "en" | "hi" | "auto">(
+    user?.settings?.preferred_voice_language || "gu"
+  );
   const [serverUrl, setServerUrl] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [newCatName, setNewCatName] = useState("");
-  const [newCatType, setNewCatType] = useState<TransactionType>("EXPENSE");
-  const [currPass, setCurrPass] = useState("");
-  const [newPass, setNewPass] = useState("");
-  const [voiceLang, setVoiceLang] = useState<"gu" | "en" | "hi" | "auto">("gu");
+
+  // Mobile OTP Verification state
+  const [mobileNum, setMobileNum] = useState(user?.mobile_number || "");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
 
   useEffect(() => {
-    getApiBaseUrl().then(setServerUrl);
-    mobileApi.listCategories().then(setCategories).catch(() => {});
-    if (user?.settings?.preferred_voice_language) {
-      setVoiceLang(user.settings.preferred_voice_language);
-    }
-  }, [user]);
+    getApiBaseUrl().then(setServerUrl).catch(() => { });
+  }, []);
 
-  const selectVoiceLang = async (lang: "gu" | "en" | "hi" | "auto") => {
-    try {
-      setVoiceLang(lang);
-      await mobileApi.updateVoiceLanguage(lang);
-      await refreshUser();
-      Alert.alert("Saved", "Voice input language updated.");
-    } catch {
-      Alert.alert("Error", "Could not update voice language.");
-    }
-  };
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
 
-  const saveProfile = async () => {
+  useFocusEffect(
+    useCallback(() => {
+      mobileApi.listCategories().then(setCategories).catch(() => { });
+    }, [])
+  );
+
+  const handleSaveProfile = async () => {
     try {
       await mobileApi.updateProfile({ full_name: fullName.trim(), email: email.trim() });
       await refreshUser();
@@ -63,122 +76,158 @@ export default function ProfileSettingsScreen() {
     }
   };
 
-  const selectCurrency = async (code: string, symbol: string) => {
-    try {
-      await mobileApi.updateCurrency({ currency_code: code, currency_symbol: symbol });
-      await refreshUser();
-    } catch {
-      Alert.alert("Error", "Could not update currency.");
-    }
-  };
-
-  const addCategory = async () => {
-    if (!newCatName.trim()) return;
-    try {
-      const cat = await mobileApi.createCategory({
-        name: newCatName.trim(),
-        type: newCatType,
-        color: newCatType === "EXPENSE" ? "#2563EB" : "#059669",
-      });
-      setCategories((prev) => [...prev, cat]);
-      setNewCatName("");
-    } catch (err) {
-      Alert.alert("Error", err instanceof ApiError ? err.message : "Could not add category.");
-    }
-  };
-
-  const removeCategory = (cat: Category) => {
-    Alert.alert("Delete Category", `Delete "${cat.name}"? Any transactions will move to Other.`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          await mobileApi.deleteCategory(cat.id, true);
-          setCategories((prev) => prev.filter((c) => c.id !== cat.id));
-        },
-      },
-    ]);
-  };
-
-  const updatePass = async () => {
-    if (newPass.length < 8) {
-      Alert.alert("Validation", "New password must be at least 8 characters.");
+  const handleSendVerifyOtp = async () => {
+    if (!mobileNum.trim()) {
+      Alert.alert("Required", "Enter your mobile number.");
       return;
     }
     try {
-      await mobileApi.changePassword({ current_password: currPass, new_password: newPass });
-      Alert.alert("Success", "Password changed. Please sign in again.");
-      logout();
+      const res = await mobileApi.sendOtp({
+        mobile_number: mobileNum.trim(),
+        purpose: "VERIFY_MOBILE",
+      });
+      setOtpSent(true);
+      setCooldown(res.cooldown_seconds || 60);
+      setDevOtp(res.dev_otp || null);
+      Alert.alert("OTP Sent", `Verification code sent to ${res.mobile_number}.`);
     } catch (err) {
-      Alert.alert("Error", err instanceof ApiError ? err.message : "Password update failed.");
+      Alert.alert("Error", err instanceof ApiError ? err.message : "Could not send OTP.");
     }
   };
 
-  const saveServer = async () => {
-    await setApiBaseUrl(serverUrl);
-    Alert.alert("Saved", "Backend server URL updated.");
+  const handleVerifyMobile = async () => {
+    try {
+      await mobileApi.verifyMobile({ mobile_number: mobileNum.trim(), otp: otp.trim() });
+      await refreshUser();
+      setOtpSent(false);
+      setOtp("");
+      setDevOtp(null);
+      Alert.alert("Verified", "Mobile number verified successfully.");
+    } catch (err) {
+      Alert.alert("Invalid OTP", err instanceof ApiError ? err.message : "Verification failed.");
+    }
   };
 
   const exportBackup = async () => {
     try {
       await mobileApi.exportBackup();
-    } catch {
-      Alert.alert("Error", "Could not export backup.");
+    } catch (err) {
+      Alert.alert("Error", err instanceof ApiError ? err.message : "Backup export failed.");
     }
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
+    <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.title}>Profile & Settings</Text>
-
-        {/* Profile */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>User Profile</Text>
-          <Text style={styles.label}>Full Name</Text>
-          <TextInput style={styles.input} value={fullName} onChangeText={setFullName} />
-          <Text style={styles.label}>Email</Text>
-          <TextInput style={styles.input} value={email} onChangeText={setEmail} autoCapitalize="none" />
-          <TouchableOpacity style={styles.primaryBtn} onPress={saveProfile}>
-            <Text style={styles.primaryBtnText}>Save Profile</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Currency */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Currency (Default INR)</Text>
-          <View style={styles.rowWrap}>
-            {CURRENCIES.map((c) => (
-              <TouchableOpacity
-                key={c.code}
-                onPress={() => selectCurrency(c.code, c.symbol)}
-                style={[styles.pill, currencyCode === c.code && styles.pillActive]}
-              >
-                <Text style={[styles.pillText, currencyCode === c.code && styles.pillTextActive]}>
-                  {c.symbol} {c.code}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        {/* Account Header */}
+        <View style={styles.headerCard}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {(user?.full_name?.[0] || "A").toUpperCase()}
+            </Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name}>{user?.full_name}</Text>
+            <Text style={styles.email}>{user?.email}</Text>
+            <Text style={styles.badgeLine}>
+              {user?.mobile_verified
+                ? `Verified Mobile: ${user.mobile_number}`
+                : "Mobile Not Verified"}
+              {user?.role === "ADMIN" ? " · ADMIN" : ""}
+            </Text>
           </View>
         </View>
 
-        {/* Voice Input Language */}
+        {/* Arthly Shortcuts */}
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Voice Input Language</Text>
-          <View style={styles.rowWrap}>
-            {[
-              { code: "gu", label: "ગુજરાતી" },
-              { code: "hi", label: "हिंदी" },
-              { code: "en", label: "English" },
-              { code: "auto", label: "Auto" },
-            ].map((l) => (
+          <Text style={styles.cardTitle}>Arthly Features</Text>
+          <ShortcutRow
+            icon="speedometer-outline"
+            label="Monthly Budgets & Limits"
+            onPress={() => router.push("/budgets")}
+          />
+          <ShortcutRow
+            icon="notifications-outline"
+            label="Notifications & Smart Alerts"
+            onPress={() => router.push("/notifications")}
+          />
+          <ShortcutRow
+            icon="scan-outline"
+            label="Scan Payment Screenshot"
+            onPress={() => router.push("/screenshot-import")}
+          />
+          <ShortcutRow
+            icon="bar-chart-outline"
+            label="Analytics & PDF/Excel Reports"
+            onPress={() => router.push("/(tabs)/reports")}
+          />
+          <ShortcutRow
+            icon="checkmark-done-outline"
+            label="Bank Statement Verification"
+            onPress={() => router.push("/reconciliation")}
+          />
+          {user?.role === "ADMIN" && (
+            <ShortcutRow
+              icon="shield-checkmark-outline"
+              label="Admin Control Panel"
+              onPress={() => router.push("/admin")}
+            />
+          )}
+        </View>
+
+        {/* Mobile OTP Verification Card */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Mobile Number & OTP Verification</Text>
+          <TextInput
+            style={styles.input}
+            value={mobileNum}
+            onChangeText={setMobileNum}
+            keyboardType="phone-pad"
+            placeholder="+91 9876543210"
+          />
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            disabled={cooldown > 0}
+            onPress={handleSendVerifyOtp}
+          >
+            <Text style={styles.secondaryBtnText}>
+              {cooldown > 0 ? `Resend OTP in ${cooldown}s` : "Send Verification OTP"}
+            </Text>
+          </TouchableOpacity>
+
+          {otpSent && (
+            <>
+              <TextInput
+                style={styles.input}
+                value={otp}
+                onChangeText={setOtp}
+                keyboardType="number-pad"
+                maxLength={6}
+                placeholder="Enter 6-digit OTP"
+              />
+              {devOtp ? <Text style={styles.devOtp}>Dev OTP: {devOtp}</Text> : null}
+              <TouchableOpacity style={styles.primaryBtn} onPress={handleVerifyMobile}>
+                <Text style={styles.primaryBtnText}>Verify Mobile Number</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+
+        {/* Voice Language */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Voice Recognition Language</Text>
+          <View style={styles.chipRow}>
+            {VOICE_LANGUAGES.map((l) => (
               <TouchableOpacity
                 key={l.code}
-                onPress={() => selectVoiceLang(l.code as any)}
-                style={[styles.pill, voiceLang === l.code && styles.pillActive]}
+                style={[styles.chip, voiceLang === l.code && styles.chipActive]}
+                onPress={async () => {
+                  setVoiceLang(l.code);
+                  await mobileApi.updateVoiceLanguage(l.code);
+                  await refreshUser();
+                }}
               >
-                <Text style={[styles.pillText, voiceLang === l.code && styles.pillTextActive]}>
+                <Text style={[styles.chipText, voiceLang === l.code && styles.chipTextActive]}>
                   {l.label}
                 </Text>
               </TouchableOpacity>
@@ -186,91 +235,103 @@ export default function ProfileSettingsScreen() {
           </View>
         </View>
 
+        {/* Currency */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Default Currency</Text>
+          <View style={styles.chipRow}>
+            {CURRENCIES.map((c) => {
+              const active = user?.settings?.currency_code === c.code;
+              return (
+                <TouchableOpacity
+                  key={c.code}
+                  style={[styles.chip, active && styles.chipActive]}
+                  onPress={async () => {
+                    await mobileApi.updateCurrency({
+                      currency_code: c.code,
+                      currency_symbol: c.symbol,
+                    });
+                    await refreshUser();
+                  }}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                    {c.code} ({c.symbol})
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Profile Edit */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Account Details</Text>
+          <TextInput style={styles.input} value={fullName} onChangeText={setFullName} />
+          <TextInput
+            style={styles.input}
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+          />
+          <TouchableOpacity style={styles.primaryBtn} onPress={handleSaveProfile}>
+            <Text style={styles.primaryBtnText}>Save Profile</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Categories */}
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Custom Categories</Text>
-          <View style={styles.rowGap}>
-            {(["EXPENSE", "INCOME"] as TransactionType[]).map((t) => (
-              <TouchableOpacity
-                key={t}
-                onPress={() => setNewCatType(t)}
-                style={[styles.pill, newCatType === t && styles.pillActive]}
-              >
-                <Text style={[styles.pillText, newCatType === t && styles.pillTextActive]}>
-                  {t === "EXPENSE" ? "Expense" : "Income"}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <View style={styles.rowGap}>
+          <Text style={styles.cardTitle}>Custom Expense Category</Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
             <TextInput
               style={[styles.input, { flex: 1 }]}
+              placeholder="e.g. Fuel, Subscriptions"
               value={newCatName}
               onChangeText={setNewCatName}
-              placeholder="New category name"
-              placeholderTextColor={COLORS.textLight}
             />
-            <TouchableOpacity style={styles.smallBtn} onPress={addCategory}>
+            <TouchableOpacity
+              style={styles.primarySmall}
+              onPress={async () => {
+                if (!newCatName.trim()) return;
+                await mobileApi.createCategory({
+                  name: newCatName.trim(),
+                  type: "EXPENSE",
+                  color: "#2563EB",
+                });
+                setNewCatName("");
+                const updated = await mobileApi.listCategories();
+                setCategories(updated);
+              }}
+            >
               <Text style={styles.primaryBtnText}>Add</Text>
             </TouchableOpacity>
           </View>
-          <View style={{ marginTop: 10, gap: 6 }}>
-            {categories
-              .filter((c) => c.type === newCatType)
-              .map((cat) => (
-                <View key={cat.id} style={styles.catRow}>
-                  <View style={styles.rowGap}>
-                    <View style={[styles.dot, { backgroundColor: cat.color }]} />
-                    <Text style={styles.catName}>{cat.name}</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => removeCategory(cat)}>
-                    <Ionicons name="trash-outline" size={16} color={COLORS.textLight} />
-                  </TouchableOpacity>
-                </View>
-              ))}
-          </View>
+          <Text style={styles.subMuted}>{categories.length} categories configured</Text>
         </View>
 
-        {/* Change Password */}
+        {/* Server URL & Backup */}
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Change Password</Text>
-          <TextInput
-            style={styles.input}
-            value={currPass}
-            onChangeText={setCurrPass}
-            placeholder="Current password"
-            placeholderTextColor={COLORS.textLight}
-            secureTextEntry
-          />
-          <TextInput
-            style={[styles.input, { marginTop: 8 }]}
-            value={newPass}
-            onChangeText={setNewPass}
-            placeholder="New password (min. 8 chars)"
-            placeholderTextColor={COLORS.textLight}
-            secureTextEntry
-          />
-          <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: "#0F172A" }]} onPress={updatePass}>
-            <Text style={styles.primaryBtnText}>Update Password</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Backup & Server Sync URL */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Backup & Backend Sync</Text>
-          <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: COLORS.sage }]} onPress={exportBackup}>
-            <Text style={styles.primaryBtnText}>Export Full Data Backup (JSON)</Text>
-          </TouchableOpacity>
-
-          <Text style={[styles.label, { marginTop: 14 }]}>FastAPI Server URL</Text>
+          <Text style={styles.cardTitle}>Server & Backup</Text>
           <TextInput
             style={styles.input}
             value={serverUrl}
             onChangeText={setServerUrl}
             autoCapitalize="none"
           />
-          <TouchableOpacity style={styles.outlineBtn} onPress={saveServer}>
-            <Text style={styles.outlineBtnText}>Save Server URL</Text>
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            onPress={async () => {
+              const updated = await setApiBaseUrl(serverUrl);
+              setServerUrl(updated);
+              Alert.alert("Updated", `API Server: ${updated}`);
+            }}
+          >
+            <Text style={styles.secondaryBtnText}>Update Server URL</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: COLORS.sage }]}
+            onPress={exportBackup}
+          >
+            <Text style={styles.primaryBtnText}>Export JSON Backup</Text>
           </TouchableOpacity>
         </View>
 
@@ -283,19 +344,77 @@ export default function ProfileSettingsScreen() {
   );
 }
 
+function ShortcutRow({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: any;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.shortcutRow} onPress={onPress}>
+      <View style={styles.shortcutIcon}>
+        <Ionicons name={icon} size={18} color={COLORS.brand} />
+      </View>
+      <Text style={styles.shortcutLabel}>{label}</Text>
+      <Ionicons name="chevron-forward" size={16} color={COLORS.textLight} />
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.ivory },
-  scroll: { padding: 16, paddingBottom: 40, gap: 14 },
-  title: { fontSize: 22, fontWeight: "800", color: COLORS.text },
+  scroll: { padding: 16, paddingBottom: 36, gap: 12 },
+  headerCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: COLORS.surface,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 16,
+    backgroundColor: COLORS.brand,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { color: "#fff", fontSize: 20, fontWeight: "800" },
+  name: { fontSize: 17, fontWeight: "800", color: COLORS.text },
+  email: { fontSize: 12, color: COLORS.textMuted },
+  badgeLine: { fontSize: 11, fontWeight: "700", color: COLORS.brand, marginTop: 3 },
   card: {
     backgroundColor: COLORS.surface,
     borderRadius: 18,
+    padding: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
-    padding: 16,
+    gap: 10,
   },
-  sectionTitle: { fontSize: 15, fontWeight: "800", color: COLORS.text, marginBottom: 10 },
-  label: { fontSize: 12, fontWeight: "600", color: COLORS.textMuted, marginBottom: 5, marginTop: 8 },
+  cardTitle: { fontSize: 14, fontWeight: "800", color: COLORS.text },
+  shortcutRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  shortcutIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: COLORS.brandSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  shortcutLabel: { flex: 1, fontSize: 13, fontWeight: "700", color: COLORS.text },
   input: {
     backgroundColor: COLORS.ivory,
     borderWidth: 1,
@@ -304,62 +423,47 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: COLORS.text,
   },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 99,
+    backgroundColor: COLORS.ivory,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  chipActive: { backgroundColor: COLORS.brand, borderColor: COLORS.brand },
+  chipText: { fontSize: 12, fontWeight: "600", color: COLORS.text },
+  chipTextActive: { color: "#fff", fontWeight: "700" },
   primaryBtn: {
-    marginTop: 12,
     backgroundColor: COLORS.brand,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: "center",
   },
-  primaryBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
-  smallBtn: {
+  primarySmall: {
     backgroundColor: COLORS.brand,
     borderRadius: 12,
     paddingHorizontal: 16,
     justifyContent: "center",
   },
-  outlineBtn: {
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+  primaryBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  secondaryBtn: {
+    backgroundColor: COLORS.brandSoft,
     borderRadius: 12,
-    paddingVertical: 10,
+    paddingVertical: 11,
     alignItems: "center",
   },
-  outlineBtnText: { fontSize: 13, fontWeight: "700", color: COLORS.text },
-  rowWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  rowGap: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
-  pill: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.ivory,
-  },
-  pillActive: { backgroundColor: COLORS.brand, borderColor: COLORS.brand },
-  pillText: { fontSize: 12, fontWeight: "700", color: COLORS.textMuted },
-  pillTextActive: { color: "#FFFFFF" },
-  catRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 6,
-    borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
-  },
-  dot: { width: 9, height: 9, borderRadius: 5 },
-  catName: { fontSize: 13, fontWeight: "600", color: COLORS.text },
+  secondaryBtnText: { color: COLORS.brand, fontSize: 13, fontWeight: "700" },
+  devOtp: { fontSize: 12, fontWeight: "700", color: COLORS.amber },
+  subMuted: { fontSize: 11, color: COLORS.textMuted },
   logoutBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     backgroundColor: COLORS.roseSoft,
-    borderWidth: 1,
-    borderColor: "#FECDD3",
     borderRadius: 14,
     paddingVertical: 14,
   },

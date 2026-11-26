@@ -23,6 +23,7 @@ from app.schemas.reconciliation import (
     ReconciliationMatchOut,
     ReconciliationSessionOut,
 )
+from app.services.notification_service import evaluate_budgets_for_user
 from app.services.reconciliation_service import ReconciliationEngine
 from app.services.reports import (
     generate_reconciliation_csv,
@@ -298,6 +299,8 @@ def update_match_action(
             payment_mode="Bank Transfer / UPI",
             transaction_date=b_tx.transaction_date,
             notes=f"Created from bank statement reconciliation (Ref: {b_tx.reference_no or 'N/A'})",
+            external_ref_id=b_tx.reference_no,
+            source="RECONCILIATION",
         )
         db.add(new_tx)
         db.flush()
@@ -305,6 +308,8 @@ def update_match_action(
         match.app_transaction_id = new_tx.id
         match.status = "MATCHED"
         match.match_score = 100.0
+        if tx_type == "EXPENSE":
+            evaluate_budgets_for_user(db, current_user.id, b_tx.transaction_date.month, b_tx.transaction_date.year)
 
     elif payload.action == "CONFIRMED":
         match.status = "MATCHED"

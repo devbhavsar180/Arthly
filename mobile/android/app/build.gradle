@@ -91,11 +91,14 @@ android {
 
     namespace 'com.personal.myexpensetracker'
     defaultConfig {
-        applicationId 'com.personal.myexpensetracker'
+        applicationId 'com.arthly.personalfinance'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
-        versionName "1.1.0"
+        versionCode 4
+        versionName "1.2.0"
+        ndk {
+            abiFilters "arm64-v8a", "armeabi-v7a", "x86_64"
+        }
     }
     signingConfigs {
         debug {
@@ -107,6 +110,15 @@ android {
             enableV2Signing true
             enableV3Signing true
         }
+        release {
+            storeFile file('arthly-release.keystore')
+            storePassword 'arthly2026'
+            keyAlias 'arthlyrelease'
+            keyPassword 'arthly2026'
+            enableV1Signing true
+            enableV2Signing true
+            enableV3Signing true
+        }
     }
     buildTypes {
         debug {
@@ -114,7 +126,8 @@ android {
             debuggable true
         }
         release {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
+            debuggable false
             shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"

@@ -6,8 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
-from app.core.database import Base, engine
+from app.core.database import Base, SessionLocal, engine
 from app import models  # noqa: F401 - register models
+from app.services.seed import seed_admin_from_env, seed_system_defaults
 
 # Configure minimal, privacy-safe logging (no financial bodies or credentials logged)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -21,6 +22,15 @@ async def lifespan(_app: FastAPI):
     # Ensure tables exist when running in local dev without manual alembic invocation
     if settings.APP_ENV == "development":
         Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        seed_system_defaults(db)
+        seed_admin_from_env(db)
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
     logger.info("Application started in %s mode.", settings.APP_ENV)
     yield
     logger.info("Application shutting down.")
@@ -28,8 +38,8 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="1.0.0",
-    description="Personal Expense & Income Tracker REST API (Web & Android Mobile Sync)",
+    version="2.0.0",
+    description="Arthly — AI-Powered Personal Finance Tracker REST API (Web, Mobile & Admin)",
     lifespan=lifespan,
 )
 

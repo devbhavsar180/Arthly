@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -9,118 +10,202 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Link } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ApiError } from "@/lib/api";
+import { Link } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { ApiError, mobileApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { COLORS } from "@/lib/format";
 
 export default function RegisterScreen() {
-  const { register } = useAuth();
+  const { registerWithOtp } = useAuth();
+  const [step, setStep] = useState<1 | 2>(1);
   const [fullName, setFullName] = useState("");
+  const [mobileNumber, setMobileNumber] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [otp, setOtp] = useState("");
+  const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
 
-  const handleRegister = async () => {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  const handleSendOtp = async () => {
     setError("");
-    if (fullName.trim().length < 2) {
-      setError("Please enter your full name.");
+    setInfo("");
+    if (!fullName.trim() || !mobileNumber.trim() || password.length < 6) {
+      setError("Enter full name, mobile number, and password (6+ characters).");
       return;
     }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-    if (password !== confirm) {
-      setError("Passwords do not match.");
-      return;
-    }
-    setSubmitting(true);
+    setBusy(true);
     try {
-      await register(fullName.trim(), email.trim(), password);
+      const res = await mobileApi.sendOtp({
+        mobile_number: mobileNumber.trim(),
+        purpose: "REGISTER",
+      });
+      setStep(2);
+      setCooldown(res.cooldown_seconds || 60);
+      setDevOtp(res.dev_otp || null);
+      setInfo(`Verification OTP sent to ${res.mobile_number}.`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not create account.");
+      setError(err instanceof ApiError ? err.message : "Could not send registration OTP.");
     } finally {
-      setSubmitting(false);
+      setBusy(false);
+    }
+  };
+
+  const handleVerifyAndRegister = async () => {
+    setError("");
+    if (!otp.trim()) {
+      setError("Enter the 6-digit OTP sent to your mobile.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const verify = await mobileApi.verifyOtp({
+        mobile_number: mobileNumber.trim(),
+        otp: otp.trim(),
+        purpose: "REGISTER",
+      });
+      await registerWithOtp({
+        full_name: fullName.trim(),
+        mobile_number: verify.mobile_number,
+        email: email.trim() || undefined,
+        password,
+        verification_token: verify.verification_token || undefined,
+        otp: otp.trim(),
+      });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Registration failed.");
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-          <View style={styles.card}>
-            <Text style={styles.title}>Create Personal Account</Text>
-            <Text style={styles.subtitle}>Syncs seamlessly with your web dashboard</Text>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.brandHeader}>
+            <View style={styles.logoBox}>
+              <Ionicons name="wallet" size={26} color="#fff" />
+            </View>
+            <Text style={styles.brandName}>Join Arthly</Text>
+            <Text style={styles.brandSub}>Step {step} of 2 · Mobile OTP Verification</Text>
+          </View>
 
+          <View style={styles.card}>
             {error ? (
               <View style={styles.errorBox}>
                 <Text style={styles.errorText}>{error}</Text>
               </View>
             ) : null}
+            {info ? (
+              <View style={styles.infoBox}>
+                <Text style={styles.infoText}>{info}</Text>
+              </View>
+            ) : null}
 
-            <Text style={styles.label}>Full Name</Text>
-            <TextInput
-              style={styles.input}
-              value={fullName}
-              onChangeText={setFullName}
-              placeholder="Your name"
-              placeholderTextColor={COLORS.textLight}
-            />
+            {step === 1 ? (
+              <>
+                <Text style={styles.label}>Full Name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={fullName}
+                  onChangeText={setFullName}
+                  placeholder="Aarav Patel"
+                />
 
-            <Text style={styles.label}>Email Address</Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              placeholderTextColor={COLORS.textLight}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
+                <Text style={styles.label}>Mobile Number (Required)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={mobileNumber}
+                  onChangeText={setMobileNumber}
+                  keyboardType="phone-pad"
+                  placeholder="+91 9876543210"
+                />
 
-            <Text style={styles.label}>Password (min. 8 chars)</Text>
-            <TextInput
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Create password"
-              placeholderTextColor={COLORS.textLight}
-              secureTextEntry
-            />
+                <Text style={styles.label}>Email (Optional)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  placeholder="aarav@example.com"
+                />
 
-            <Text style={styles.label}>Confirm Password</Text>
-            <TextInput
-              style={styles.input}
-              value={confirm}
-              onChangeText={setConfirm}
-              placeholder="Repeat password"
-              placeholderTextColor={COLORS.textLight}
-              secureTextEntry
-            />
+                <Text style={styles.label}>Password (Min 6 characters)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  placeholder="••••••••"
+                />
 
-            <TouchableOpacity
-              style={[styles.primaryBtn, submitting && { opacity: 0.6 }]}
-              onPress={handleRegister}
-              disabled={submitting}
-            >
-              <Text style={styles.primaryBtnText}>
-                {submitting ? "Creating..." : "Create Account"}
-              </Text>
-            </TouchableOpacity>
+                <TouchableOpacity style={styles.primaryBtn} onPress={handleSendOtp} disabled={busy}>
+                  {busy ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Send Verification OTP</Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.label}>Enter 6-Digit OTP</Text>
+                <TextInput
+                  style={[styles.input, styles.otpInput]}
+                  value={otp}
+                  onChangeText={setOtp}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  placeholder="• • • • • •"
+                />
+
+                {devOtp ? <Text style={styles.devOtpText}>Dev OTP: {devOtp}</Text> : null}
+
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  onPress={handleVerifyAndRegister}
+                  disabled={busy}
+                >
+                  {busy ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Verify Mobile & Create Account</Text>
+                  )}
+                </TouchableOpacity>
+
+                <View style={styles.rowBetween}>
+                  <TouchableOpacity onPress={() => setStep(1)}>
+                    <Text style={styles.linkText}>← Edit Number</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity disabled={cooldown > 0 || busy} onPress={handleSendOtp}>
+                    <Text style={styles.linkText}>
+                      {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend OTP"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
 
             <View style={styles.footerRow}>
-              <Text style={styles.footerText}>Already registered? </Text>
-              <Link href="/(auth)/login" asChild>
-                <TouchableOpacity>
-                  <Text style={styles.linkText}>Sign In</Text>
-                </TouchableOpacity>
+              <Text style={styles.footerMuted}>Already have an account? </Text>
+              <Link href="/(auth)/login" style={styles.footerLink}>
+                Sign In
               </Link>
             </View>
           </View>
@@ -132,7 +217,19 @@ export default function RegisterScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.ivory },
-  container: { flexGrow: 1, justifyContent: "center", padding: 20 },
+  scroll: { flexGrow: 1, padding: 20, justifyContent: "center" },
+  brandHeader: { alignItems: "center", marginBottom: 22 },
+  logoBox: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    backgroundColor: COLORS.brand,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  brandName: { fontSize: 22, fontWeight: "800", color: COLORS.text },
+  brandSub: { fontSize: 13, color: COLORS.textMuted, marginTop: 2 },
   card: {
     backgroundColor: COLORS.surface,
     borderRadius: 22,
@@ -140,37 +237,47 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  title: { fontSize: 20, fontWeight: "800", color: COLORS.text },
-  subtitle: { fontSize: 13, color: COLORS.textMuted, marginTop: 4, marginBottom: 16 },
-  label: { fontSize: 12, fontWeight: "600", color: COLORS.text, marginBottom: 6, marginTop: 10 },
+  label: { fontSize: 12, fontWeight: "700", color: COLORS.text, marginBottom: 6, marginTop: 10 },
   input: {
     backgroundColor: COLORS.ivory,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 11,
     fontSize: 14,
     color: COLORS.text,
   },
+  otpInput: { fontSize: 18, letterSpacing: 6, fontWeight: "700", textAlign: "center" },
   primaryBtn: {
-    marginTop: 20,
     backgroundColor: COLORS.brand,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: "center",
+    marginTop: 18,
   },
-  primaryBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
-  footerRow: { flexDirection: "row", justifyContent: "center", marginTop: 18 },
-  footerText: { fontSize: 13, color: COLORS.textMuted },
+  primaryBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  rowBetween: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 14,
+  },
   linkText: { fontSize: 13, fontWeight: "700", color: COLORS.brand },
-  errorBox: {
-    backgroundColor: COLORS.roseSoft,
-    borderColor: "#FECDD3",
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
+  errorBox: { backgroundColor: COLORS.roseSoft, padding: 10, borderRadius: 10, marginBottom: 8 },
+  errorText: { color: COLORS.rose, fontSize: 12, fontWeight: "600" },
+  infoBox: { backgroundColor: COLORS.sageSoft, padding: 10, borderRadius: 10, marginBottom: 8 },
+  infoText: { color: COLORS.sage, fontSize: 12, fontWeight: "600" },
+  devOtpText: {
+    marginTop: 10,
+    padding: 8,
+    backgroundColor: COLORS.amberSoft,
+    color: COLORS.amber,
+    borderRadius: 8,
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "center",
   },
-  errorText: { fontSize: 12, color: COLORS.rose, fontWeight: "600" },
+  footerRow: { flexDirection: "row", justifyContent: "center", marginTop: 18 },
+  footerMuted: { fontSize: 13, color: COLORS.textMuted },
+  footerLink: { fontSize: 13, fontWeight: "700", color: COLORS.brand },
 });

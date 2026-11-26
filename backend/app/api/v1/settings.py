@@ -8,6 +8,17 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.security import hash_password, verify_password
 from app.models.category import Category
+from app.models.finance_plus import (
+    AppConfig,
+    Budget,
+    BudgetAlertLog,
+    Notification,
+    NotificationPreference,
+    OtpVerification,
+    PaymentScreenshot,
+    SavingsGoal,
+    SavingsGoalContribution,
+)
 from app.models.reconciliation import (
     BankStatement,
     BankStatementTransaction,
@@ -168,6 +179,14 @@ def delete_account(
         )
 
     # Delete child tables in safe FK order
+    db.query(PaymentScreenshot).filter(PaymentScreenshot.user_id == current_user.id).delete()
+    db.query(Notification).filter(Notification.user_id == current_user.id).delete()
+    db.query(NotificationPreference).filter(NotificationPreference.user_id == current_user.id).delete()
+    db.query(BudgetAlertLog).filter(BudgetAlertLog.user_id == current_user.id).delete()
+    db.query(Budget).filter(Budget.user_id == current_user.id).delete()
+    db.query(SavingsGoalContribution).filter(SavingsGoalContribution.user_id == current_user.id).delete()
+    db.query(SavingsGoal).filter(SavingsGoal.user_id == current_user.id).delete()
+    db.query(OtpVerification).filter(OtpVerification.user_id == current_user.id).delete()
     db.query(ReconciliationMatch).filter(ReconciliationMatch.user_id == current_user.id).delete()
     db.query(ReconciliationSession).filter(ReconciliationSession.user_id == current_user.id).delete()
     db.query(BankStatementTransaction).filter(BankStatementTransaction.user_id == current_user.id).delete()
@@ -180,3 +199,10 @@ def delete_account(
     db.query(User).filter(User.id == current_user.id).delete()
     db.commit()
     return {"message": "Your account and all personal financial data have been permanently deleted."}
+
+
+@router.get("/app-features")
+def get_enabled_app_features(db: Session = Depends(get_db)):
+    """Public/client read of enabled platform feature flags."""
+    rows = db.query(AppConfig).all()
+    return {row.key: row.value for row in rows}

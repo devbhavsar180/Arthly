@@ -1,12 +1,11 @@
 import React, { useState } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
-import { Tabs, useRouter } from "expo-router";
+import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { QuickAddModal } from "@/components/QuickAddModal";
 import { COLORS } from "@/lib/format";
 
-export default function TabsLayout() {
-  const router = useRouter();
+export default function TabLayout() {
   const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   return (
@@ -16,30 +15,23 @@ export default function TabsLayout() {
           headerShown: false,
           tabBarActiveTintColor: COLORS.brand,
           tabBarInactiveTintColor: COLORS.textLight,
-          tabBarStyle: {
-            backgroundColor: COLORS.surface,
-            borderTopColor: COLORS.border,
-            height: 66,
-            paddingBottom: 8,
-            paddingTop: 6,
-          },
-          tabBarLabelStyle: {
-            fontSize: 11,
-            fontWeight: "600",
-          },
+          tabBarStyle: styles.tabBar,
+          tabBarLabelStyle: styles.tabLabel,
         }}
       >
         <Tabs.Screen
           name="index"
           options={{
             title: "Home",
-            tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} />,
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="home-outline" size={size} color={color} />
+            ),
           }}
         />
         <Tabs.Screen
           name="transactions"
           options={{
-            title: "Transactions",
+            title: "Activity",
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="swap-horizontal-outline" size={size} color={color} />
             ),
@@ -52,22 +44,22 @@ export default function TabsLayout() {
             tabBarButton: () => (
               <View style={styles.fabContainer}>
                 <TouchableOpacity
+                  onPress={() => setQuickAddOpen(true)}
                   activeOpacity={0.85}
                   style={styles.fab}
-                  onPress={() => setQuickAddOpen(true)}
                 >
-                  <Ionicons name="add" size={28} color="#FFFFFF" />
+                  <Ionicons name="add" size={28} color="#fff" />
                 </TouchableOpacity>
               </View>
             ),
           }}
         />
         <Tabs.Screen
-          name="reports"
+          name="savings"
           options={{
-            title: "Reports",
+            title: "Savings",
             tabBarIcon: ({ color, size }) => (
-              <Ionicons name="bar-chart-outline" size={size} color={color} />
+              <Ionicons name="wallet-outline" size={size} color={color} />
             ),
           }}
         />
@@ -80,50 +72,49 @@ export default function TabsLayout() {
             ),
           }}
         />
+        <Tabs.Screen
+          name="reports"
+          options={{
+            href: null,
+          }}
+        />
       </Tabs>
 
-      <QuickAddModal
-        visible={quickAddOpen}
-        onClose={() => setQuickAddOpen(false)}
-        onSelectExpense={() => {
-          setQuickAddOpen(false);
-          router.push("/add-expense");
-        }}
-        onSelectIncome={() => {
-          setQuickAddOpen(false);
-          router.push("/add-income");
-        }}
-        onSelectVoice={() => {
-          setQuickAddOpen(false);
-          router.push("/voice-entry");
-        }}
-        onSelectReconciliation={() => {
-          setQuickAddOpen(false);
-          router.push("/reconciliation");
-        }}
-      />
+      <QuickAddModal visible={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  tabBar: {
+    backgroundColor: COLORS.surface,
+    borderTopColor: COLORS.border,
+    borderTopWidth: 1,
+    height: 64,
+    paddingBottom: 8,
+    paddingTop: 6,
+  },
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
   fabContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
   },
   fab: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: COLORS.brand,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: -22,
-    elevation: 6,
+    marginBottom: 14,
     shadowColor: COLORS.brand,
-    shadowOpacity: 0.32,
-    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
     shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
 });
